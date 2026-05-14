@@ -16,6 +16,6 @@ class Settings(BaseModel):
     llm_model: str = os.getenv("LLM_MODEL", "qwen2.5:1.5b")
     ollama_base_url: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 
-    dashscope_api_key: str = "your_default_key_here"
+    dashscope_api_key: str = os.getenv("DASHSCOPE_API_KEY", "")
 
 settings = Settings()

@@ -7,5 +7,5 @@ router = APIRouter()
 
 @router.post("/message", response_model=ChatResponse)
 def chat_message(request: ChatRequest):
-    result = run_pipeline(request.user_text)
+    result = run_pipeline(request.user_text, audio_path=request.audio_path)
     return ChatResponse(**result)
