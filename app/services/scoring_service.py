@@ -1,3 +1,5 @@
+### 封装打分模型，核心接口 score_text_and_audio ，内含安全机制
+
 import os
 from typing import Optional
 from app.models.scoring_engine import UnifiedDepressionEngine

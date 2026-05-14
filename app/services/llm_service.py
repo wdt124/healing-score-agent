@@ -1,7 +1,8 @@
-import requests
+### 封装llm，核心接口 generate_supportive_reply
 
+import requests
 from app.core.config import settings
-from app.prompts.skill_loader import KnowledgeBase
+from app.system_prompts.skill_loader import KnowledgeBase
 
 _kb: KnowledgeBase | None = None
 
@@ -61,18 +62,30 @@ def generate_supportive_reply(
     system_prompt = kb.generate_prompt(include_refs=refs)
 
     prompt = f"""
+ 用户输入：{user_text}
+
 已知评分结果：
 - 风险等级：{risk_level}
 - 分数：{score}
 - 判断依据：{"; ".join(evidence)}
 
-额外要求：
-{extra_instruction}
+额外要求：{extra_instruction}
 
-用户输入：
-{user_text}
+【核心原则】
+1. 先表达理解和共情，再做回应
+2. 不否定、不评判用户情绪
+3. 不说教、不进行长篇分析
+4. 以“陪伴者”身份交流，不扮演医生或权威
 
-请直接输出给用户的回复，不要解释推理过程，不要输出项目符号。
+【表达要求】
+- 回复控制在50~80字
+- 使用自然口语，不要像机器人
+- 避免使用专业术语，如“抑郁症诊断”等
+- 不要重复用户原话
+- 请直接输出给用户的回复，不要解释推理过程，不要输出项目符号。
+
+【你的目标】
+让用户感到被理解、被接住，而不是被分析或被教育
 """.strip()
 
     return _call_ollama(prompt, system=system_prompt)
