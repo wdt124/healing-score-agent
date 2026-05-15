@@ -35,12 +35,13 @@ def _call_ollama(prompt: str, system: str = "") -> str:
 def generate_supportive_reply(
     user_text: str,
     risk_level: str,
-    score: int,
+    persistent_score: int,
     evidence: list[str],
 ) -> str:
+
     if risk_level == "high":
         extra_instruction = (
-            "当前用户表现出较高风险。"
+            "当前用户表现出高风险。"
             "请优先表达关切和陪伴感，明确建议其尽快联系现实中的可信任对象、心理援助热线或医疗资源。"
             "不要做轻率安慰，不要淡化风险，不要给出医学诊断。"
         )
@@ -51,12 +52,18 @@ def generate_supportive_reply(
             "请表达理解与支持，并鼓励其继续描述当前最困扰的问题。"
         )
         refs = ["emotion-support", "cbt-techniques"]
-    else:
+    elif risk_level == "low":
         extra_instruction = (
             "当前用户风险较低。"
             "请给出温和、支持性、开放式的回应。"
         )
         refs = ["emotion-support", "meditation-scripts"]
+    elif risk_level == "normal":
+        extra_instruction = (
+            "当前用户无抑郁症风险，请正常交流"
+        )
+        refs = []
+
 
     kb = _get_kb()
     system_prompt = kb.generate_prompt(include_refs=refs)
@@ -66,7 +73,7 @@ def generate_supportive_reply(
 
 已知评分结果：
 - 风险等级：{risk_level}
-- 分数：{score}
+- 分数：{persistent_score}
 - 判断依据：{"; ".join(evidence)}
 
 额外要求：{extra_instruction}

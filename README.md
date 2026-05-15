@@ -20,55 +20,71 @@
 - 使用 FastAPI 启动本地后端服务
 - 提供健康检查接口：`GET /health`
 - 提供聊天接口：`POST /chat/message`
-- 基于关键词的高/中危硬拦截（`safety.py`）
 - 基于 ML 模型的自适应抑郁风险评分（`UnifiedDepressionEngine`）
+- 基于 EMA 的对话记忆分数平滑（`memory_service`，a=0.85 b=0.15）
+- 基于关键词的危机检测与分数修正（`crisis_service`）
 - 根据风险等级调用 Ollama 生成不同风格的支持性回复
 - 注入心理健康领域知识库作为 LLM System Prompt（`system_prompts/`）
 
 ## 3. 系统架构
 
 ```
-用户输入 (文本 + 可选音频)
+用户输入 (文本 + 可选音频 + session_id)
        │
        ▼
-┌─────────────────────────────────┐
-│        Pipeline Service         │
-│  (LangChain LCEL chain)         │
-│                                 │
-│  ┌───────────────────────────┐  │
-│  │    Scoring Service         │  │
-│  │  ┌─────────────────────┐  │  │
-│  │  │ 高危关键词硬拦截     │  │  │
-│  │  │ (不想活/自杀/想死等) │  │  │
-│  │  └─────────────────────┘  │  │
-│  │           │ (未命中)       │  │
-│  │           ▼               │  │
-│  │  ┌─────────────────────┐  │  │
-│  │  │ UnifiedDepression    │  │  │
-│  │  │ Engine               │  │  │
-│  │  │                      │  │  │
-│  │  │ V1: 纯文本 RF 模型   │  │  │
-│  │  │  (8维Qwen特征提取)   │  │  │
-│  │  │                      │  │  │
-│  │  │ V2: 多模态 RF 模型   │  │  │
-│  │  │  (8维文本+17维音频)  │  │  │
-│  │  └─────────────────────┘  │  │
-│  │           │               │  │
-│  │           ▼               │  │
-│  │   中危关键词兜底上浮       │  │
-│  │           │               │  │
-│  │           ▼               │  │
-│  │   risk_level / score      │  │
-│  └───────────────────────────┘  │
-│              │                  │
-│              ▼                  │
-│  ┌───────────────────────────┐  │
-│  │  LLM Service (Ollama)     │  │
-│  │  根据风险等级生成回复     │  │
-│  │  low / medium / high      │  │
-│  │  注入知识库 System Prompt │  │
-│  └───────────────────────────┘  │
-└─────────────────────────────────┘
+┌──────────────────────────────────────────────────┐
+│              Pipeline Service                     │
+│        (LangChain LCEL chain)                     │
+│                                                   │
+│  ┌─────────────────────────────────────────────┐ │
+│  │  1. scoring_step (scoring_service)           │ │
+│  │  ┌───────────────────────────────────────┐  │ │
+│  │  │  UnifiedDepressionEngine              │  │ │
+│  │  │                                        │  │ │
+│  │  │  V1: 纯文本 RF 模型 (8维Qwen特征)     │  │ │
+│  │  │  V2: 多模态 RF 模型 (8维文本+17维音频) │  │ │
+│  │  └───────────────────────────────────────┘  │ │
+│  │              │                               │ │
+│  │              ▼                               │ │
+│  │  predicted_sds_score / risk_level(中文)      │ │
+│  └─────────────────────────────────────────────┘ │
+│              │                                    │
+│              ▼                                    │
+│  ┌─────────────────────────────────────────────┐ │
+│  │  2. memory_step (memory_service)             │ │
+│  │                                              │ │
+│  │  EMA 平滑:                                   │ │
+│  │  首轮: persistent_score = instant_score      │ │
+│  │  后续: persistent_score = 0.85×旧 + 0.15×新  │ │
+│  └─────────────────────────────────────────────┘ │
+│              │                                    │
+│              ▼                                    │
+│  ┌─────────────────────────────────────────────┐ │
+│  │  3. crisis_step (crisis_service)             │ │
+│  │                                              │ │
+│  │  关键词安全检测:                              │ │
+│  │  高危 (不想活/自杀/想死等) → score = 95.0    │ │
+│  │  中危 (失眠/绝望/撑不下去等)                  │ │
+│  │    & score < 60 → score = 60.0               │ │
+│  │                                              │ │
+│  │  persistent_score → risk_level 映射:          │ │
+│  │  ≥73→high  63-72→medium                      │ │
+│  │  53-62→low  <53→normal                       │ │
+│  └─────────────────────────────────────────────┘ │
+│              │                                    │
+│              ▼                                    │
+│  ┌─────────────────────────────────────────────┐ │
+│  │  4. reply_step (LLM Service / Ollama)        │ │
+│  │                                              │ │
+│  │  根据 risk_level 生成不同风格的回复:          │ │
+│  │  high    → 危机干预 + 求助引导               │ │
+│  │  medium  → 共情支持 + CBT 技术               │ │
+│  │  low     → 温和开放式回应                     │ │
+│  │  normal  → 正常交流                           │ │
+│  │                                              │ │
+│  │  注入知识库 System Prompt                     │ │
+│  └─────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────┘
        │
        ▼
    ChatResponse
@@ -94,11 +110,11 @@ healing-score-agent/
 │   │   ├── scoring_engine.py       # 双模型自适应打分引擎（UnifiedDepressionEngine）
 │   │   └── database.py             # SQLAlchemy 数据库模型（空占位）
 │   ├── services/
-│   │   ├── pipeline_service.py     # LangChain LCEL 流程编排
-│   │   ├── scoring_service.py      # 评分引擎封装（含关键词拦截 + 中危兜底）
-│   │   ├── llm_service.py          # Ollama LLM 回复生成（含知识库注入）
-│   │   ├── memory_service.py       # 对话记忆服务（空占位）
-│   │   └── crisis_service.py       # 危机干预服务（空占位）
+│   │   ├── pipeline_service.py     # LangChain LCEL 流程编排（scoring→memory→crisis→reply）
+│   │   ├── scoring_service.py      # ML 评分引擎封装（纯评分，不含安全检测）
+│   │   ├── memory_service.py       # EMA 对话记忆平滑（persistent_score）
+│   │   ├── crisis_service.py       # 关键词安全检测 + risk_level 映射
+│   │   └── llm_service.py          # Ollama LLM 回复生成（含知识库注入）
 │   ├── system_prompts/
 │   │   ├── SKILL.md                # 心理健康助手角色定义（YAML frontmatter + Markdown）
 │   │   ├── skill_loader.py         # 知识库加载器（KnowledgeBase）
@@ -138,11 +154,14 @@ healing-score-agent/
 
 ## 5. 评分系统
 
-### 5.1 双层安全机制
+### 5.1 Pipeline 评分链路
 
-1. **高危关键词硬拦截**（`scoring_service.py`）：命中 "不想活"、"自杀"、"想死" 等关键词 → 直接判定 `重度` / 95分，跳过 ML 模型
-2. **ML 模型评分**（`scoring_engine.py`）：未命中高危关键词时，由 `UnifiedDepressionEngine` 进行精细化评估
-3. **中危关键词兜底**（`scoring_service.py`）：ML 评分 < 60 但命中中危关键词时，上浮至 60 分 / `中度`
+1. **ML 评分**（`scoring_service`）：`UnifiedDepressionEngine` 提取文本/音频特征，输出 `predicted_sds_score`（instant_score）
+2. **EMA 记忆平滑**（`memory_service`）：将 instant_score 与历史 persistent_score 加权融合，平滑单次波动
+3. **危机检测**（`crisis_service`）：
+   - 高危关键词（不想活/自杀/想死等）→ 强制 persistent_score = 95.0
+   - 中危关键词（失眠/绝望/撑不下去等）且 score < 60 → 上浮至 60.0
+   - 根据最终 persistent_score 映射 `risk_level`（high/medium/low/normal）
 
 ### 5.2 双模型自适应路由
 
@@ -159,10 +178,10 @@ healing-score-agent/
 
 | SDS 分数 | 风险等级 |
 |-----------|----------|
-| ≥ 73 | 重度 (high) |
-| 63-72 | 中度 (medium) |
-| 53-62 | 轻度 (low) |
-| < 53 | 正常 (low) |
+| ≥ 73 | high (重度) |
+| 63-72 | medium (中度) |
+| 53-62 | low (轻度) |
+| < 53 | normal (正常) |
 
 ## 6. 配置
 

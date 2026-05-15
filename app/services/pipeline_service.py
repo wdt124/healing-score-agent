@@ -1,23 +1,13 @@
+
 ### 调用接口 run_pipeline
 
 from typing import Dict, Any, Optional
 from langchain_core.runnables import RunnableLambda
-from app.services.scoring_service import score_text_and_audio
+from app.services.scoring_service import scoring_step
 from app.services.llm_service import generate_supportive_reply
+from app.services.memory_service import memory_step
+from app.services.crisis_service import crisis_step
 from app.core.config import settings
-
-
-def _map_risk_level(risk_level_cn: str) -> str:
-    mapping = {
-        "重度": "high",
-        "中度": "medium",
-        "轻度": "low",
-        "正常": "low",
-        "high": "high",
-        "medium": "medium",
-        "low": "low",
-    }
-    return mapping.get(risk_level_cn, "low")
 
 
 def _format_evidence(details: dict) -> list:
@@ -42,41 +32,42 @@ def _format_evidence(details: dict) -> list:
 
     return evidence if evidence else ["评估数据不足"]
 
-
-_scoring_step = RunnableLambda(lambda inputs: {
-    "user_text": inputs["user_text"],
-    "score_result": score_text_and_audio(
-        text=inputs["user_text"],
-        audio_path=inputs.get("audio_path"),
-    ),
-})
-
-_reply_step = RunnableLambda(lambda x: {
+reply_step = RunnableLambda(lambda x: {
     "reply": generate_supportive_reply(
         user_text=x["user_text"],
-        risk_level=_map_risk_level(x["score_result"]["risk_level"]),
-        score=x["score_result"]["predicted_sds_score"],
+        risk_level=x["risk_level"],
+        persistent_score=int(x["persistent_score"]),
         evidence=_format_evidence(x["score_result"]["details"]),
     ),
     "score_result": x["score_result"],
+    "persistent_score": x["persistent_score"],
+    "risk_level": x["risk_level"],
     "evidence": _format_evidence(x["score_result"]["details"]),
 })
 
-chain = _scoring_step | _reply_step
+chain = (scoring_step
+         | memory_step
+         | crisis_step
+         | reply_step)
 
 
-def run_pipeline(user_text: str, audio_path: Optional[str] = None) -> dict:
+def run_pipeline(
+    user_text: str,
+    audio_path: Optional[str] = None,
+    session_id: Optional[str] = None,
+) -> dict:
     result: Dict[str, Any] = chain.invoke({
         "user_text": user_text,
         "audio_path": audio_path,
+        "session_id": session_id or "default",
     })
 
     score_res: Dict[str, Any] = result["score_result"]
 
     return {
         "reply": result["reply"],
-        "risk_level": _map_risk_level(score_res["risk_level"]),
-        "score": score_res["predicted_sds_score"],
+        "risk_level": result["risk_level"],
+        "score": result.get("persistent_score", score_res["predicted_sds_score"]),
         "evidence": result.get("evidence", _format_evidence(score_res["details"])),
         "model_provider": settings.llm_provider,
         "model_name": settings.llm_model,

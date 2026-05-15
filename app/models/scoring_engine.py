@@ -1,4 +1,8 @@
-### 核心调用接口
+### 核心调用接口 得到
+# predicted_sds_score >= 73 -> high ,
+# predicted_sds_score >= 63 -> medium ,
+# predicted_sds_score >= 53 -> low ,
+# predicted_sds_score < 53 -> normal .
 
 import json
 import os
@@ -122,14 +126,11 @@ class UnifiedDepressionEngine:
                 "energy_mean": round(audio_feats_list[2], 4)
             }
 
-        # 3. 封装标准返回体
-        risk_level = "重度" if final_score >= 73 else "中度" if final_score >= 63 else "轻度" if final_score >= 53 else "正常"
-        
+
         return {
             "status": "success",
             "engine_used": used_model,
             "predicted_sds_score": round(final_score, 2),
-            "risk_level": risk_level,
             "details": {
                 "text_features_extracted": text_json,
                 "audio_features_summary": audio_diagnostics
