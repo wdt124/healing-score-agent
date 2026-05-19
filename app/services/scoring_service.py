@@ -14,7 +14,6 @@
 import os
 from typing import Optional
 from app.models.scoring_engine import UnifiedDepressionEngine
-from app.core.config import settings
 from langchain_core.runnables import RunnableLambda
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -36,6 +35,8 @@ def _get_engine() -> UnifiedDepressionEngine:
 
 def score_text_and_audio(text: str, audio_path: Optional[str] = None) -> dict:
     result = _get_engine().predict(text=text, audio_path=audio_path)
+    print(f"instance_score:{result['predicted_sds_score']}")
+
     return result
 
 scoring_step = RunnableLambda(lambda inputs: {

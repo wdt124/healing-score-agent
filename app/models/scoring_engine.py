@@ -4,18 +4,26 @@
 # predicted_sds_score >= 53 -> low ,
 # predicted_sds_score < 53 -> normal .
 
-import json
 import os
 import warnings
 import numpy as np
 import joblib
 import librosa
-from http import HTTPStatus
-from openai import OpenAI
+from typing_extensions import TypedDict, Annotated
+from langchain_openai import ChatOpenAI
 from app.core.config import settings
 
 # 忽略 librosa 可能产生的某些库警告，保持控制台干净
 warnings.filterwarnings('ignore')
+class VctDict(TypedDict):
+    anhedonia: Annotated[int, "请分析用户的文本，并在anhedonia抑郁维度上进行打分（0=无，1=轻度，2=中度，3=重度）"]
+    depressed: Annotated[int, "请分析用户的文本，并在depressed抑郁维度上进行打分（0=无，1=轻度，2=中度，3=重度）"]
+    sleep: Annotated[int, "请分析用户的文本，并在sleep抑郁维度上进行打分（0=无，1=轻度，2=中度，3=重度）"]
+    fatigue: Annotated[int, "请分析用户的文本，并在fatigue抑郁维度上进行打分（0=无，1=轻度，2=中度，3=重度）"]
+    appetite: Annotated[int, "请分析用户的文本，并在appetite抑郁维度上进行打分（0=无，1=轻度，2=中度，3=重度）"]
+    guilt: Annotated[int, "请分析用户的文本，并在guilt抑郁维度上进行打分（0=无，1=轻度，2=中度，3=重度）"]
+    concentrate: Annotated[int, "请分析用户的文本，并在concentrate抑郁维度上进行打分（0=无，1=轻度，2=中度，3=重度）"]
+    movement: Annotated[int, "请分析用户的文本，并在movement抑郁维度上进行打分（0=无，1=轻度，2=中度，3=重度）"]
 
 class UnifiedDepressionEngine:
     """
@@ -33,47 +41,45 @@ class UnifiedDepressionEngine:
         self.multimodal_scorer_v2 = joblib.load(v2_model_path)
         
         # 2. 配置 API 密钥
-        self.client = OpenAI(
+        self.model = ChatOpenAI(
+            model='deepseek-chat',
             api_key=settings.api_key,
-            base_url=settings.base_url
+            base_url=settings.base_url,
+            temperature=0.0
         )
 
-        # 强制特征顺序列表 (严禁修改顺序)
+        # 强制特征顺序列表
         self.TEXT_FEATURE_KEYS = ["anhedonia", "depressed", "sleep", "fatigue", "appetite", "guilt", "concentrate", "movement"]
 
     def _extract_text_features(self, text):
         """
         调用 DeepSeek 提取 8 维文本病理特征
         """
+
         system_prompt = """你是一位专业的临床心理学家。请分析用户的文本，并在以下8个抑郁维度上进行打分（0=无，1=轻度，2=中度，3=重度）。
         必须严格输出纯JSON格式，包含且仅包含以下键：
         "anhedonia", "depressed", "sleep", "fatigue", "appetite", "guilt", "concentrate", "movement"."""
 
         try:
-            # 使用标准 OpenAI SDK 格式调用 DeepSeek
-            response = self.client.chat.completions.create(
-                model="deepseek-chat",
-                messages=[
-                    {'role': 'system', 'content': system_prompt},
-                    {'role': 'user', 'content': text}
-                ],
-                # 显式开启 JSON 模式（DeepSeek 官方支持）
-                # 开启后，模型一定会返回合法的 JSON 字符串，且不会带 ```json 标记
-                response_format={"type": "json_object"}
-            )
+            # 绑定结构化输出工具 (LangChain 会自动处理 schema 和强制返回格式)
+            structured_llm = self.model.with_structured_output(VctDict)
 
-            # 正确的 OpenAI 属性访问路径
-            clean_content = response.choices[0].message.content.strip()
+            # 组装消息并调用
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": text}
+            ]
 
-            return json.loads(clean_content)
+            # 返回的结果直接就是一个符合 VctDict 结构的字典
+            result = structured_llm.invoke(messages)
+            return result
 
         except Exception as e:
-            # 捕获所有 API 异常或 JSON 解析异常
+            # 捕获所有 API 异常或结构化解析异常
             print(f"⚠️ 文本特征提取失败，启用安全降级机制: {e}")
 
-        # 如果大模型调用失败或解析错误，返回全 0 的安全底线
+            # 如果大模型调用失败或解析错误，返回全 0 的安全底线
         return {k: 0 for k in self.TEXT_FEATURE_KEYS}
-
 
     def _extract_audio_features(self, audio_path):
         """
@@ -141,4 +147,5 @@ class UnifiedDepressionEngine:
                 "text_features_extracted": text_json,
                 "audio_features_summary": audio_diagnostics
             }
+
         }

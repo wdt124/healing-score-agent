@@ -1,5 +1,5 @@
 
-### 封装llm，runnable组件 reply_step
+### 封装llm，runnable组件 reply_step，后面可改流式输出stream()
 '''memory_step:
         input:
             user_text
@@ -16,12 +16,12 @@
 
 '''
 import os
-
 from langchain_core.runnables import RunnableLambda
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
 from app.core.config import settings
 from app.prompt.knowledge_loader import KnowledgeBase
+from app.services.memory_service import _conversation_memory
 
 _kb: KnowledgeBase | None = None
 
@@ -38,38 +38,41 @@ def _get_kb() -> KnowledgeBase:
     return _kb
 
 
-# def _call_ollama(prompt: str, system: str = "") -> str:
-#     body: dict = {
-#         "model": settings.llm_model,
-#         "prompt": prompt,
-#         "stream": False,
-#     }
-#     if system:
-#         body["system"] = system
-#     response = requests.post(
-#         f"{settings.ollama_base_url}/api/generate",
-#         json=body,
-#         timeout=120,
-#     )
-#     response.raise_for_status()
-#     data = response.json()
-#     return data["response"].strip()
+
+_llm_client: ChatOpenAI | None = None
+
+
+def _get_llm() -> ChatOpenAI:
+    global _llm_client
+    if _llm_client is None:
+        _llm_client = ChatOpenAI(
+            model="deepseek-chat",
+            api_key=settings.api_key,
+            base_url=settings.base_url,
+            temperature=0.7,
+            max_tokens=256,
+        )
+    assert _llm_client is not None
+    return _llm_client
 
 
 def _call_llm(prompt: str, system: str = "") -> str:
-    llm = ChatOpenAI(
-        model="deepseek-chat",
-        api_key=settings.api_key,
-        base_url=settings.base_url,
-        temperature=0.7,
-        max_tokens=256,
-    )
-    messages = []
-    if system:
-        messages.append(SystemMessage(content=system))
-    messages.append(HumanMessage(content=prompt))
-    response = llm.invoke(messages)
-    return response.content.strip()
+    try:
+        llm = _get_llm()
+        messages = []
+        if system:
+            messages.append(SystemMessage(content=system))
+        messages.append(HumanMessage(content=prompt))
+        response = llm.invoke(messages)
+        content = response.content
+        assert isinstance(content, str)
+        return content.strip()
+    except Exception as e:
+        print(f"⚠️ LLM 回复生成失败，启用安全降级: {e}")
+        return (
+            "我听到了你的分享，感谢你的信任。"
+            "如果你感到困扰，建议联系身边可信任的人或专业心理援助资源。"
+        )
 
 
 def generate_supportive_reply(
@@ -77,6 +80,7 @@ def generate_supportive_reply(
     risk_level: str,
     persistent_score: int,
     evidence: list[str],
+    conversation_history: str = "",
 ) -> str:
 
     if risk_level == "high":
@@ -109,7 +113,12 @@ def generate_supportive_reply(
 
     kb = _get_kb()
     prompt_knowledge = kb.generate_prompt(include_refs=refs)
-    prompt = user_text
+
+    # 将历史对话拼接到当前用户消息之前
+    if conversation_history:
+        prompt = f"{conversation_history}\n\n[当前用户消息]\n{user_text}"
+    else:
+        prompt = user_text
 
     system_prompt = REPLY_SYSTEM_PROMPT_TEMPLATE.format(
         risk_level=risk_level,
@@ -144,16 +153,29 @@ def _format_evidence(details: dict) -> list:
 
     return evidence if evidence else ["评估数据不足"]
 
+def _reply_with_memory(inputs: dict) -> dict:
+    session_id = inputs.get("session_id", "default")
+    history = _conversation_memory.get_history_text(session_id)
+    evidence = _format_evidence(inputs["score_result"]["details"])
+
+    reply = generate_supportive_reply(
+        user_text=inputs["user_text"],
+        risk_level=inputs["risk_level"],
+        persistent_score=int(inputs["persistent_score"]),
+        evidence=evidence,
+        conversation_history=history,
+    )
+
+    _conversation_memory.add_turn(session_id, inputs["user_text"], reply)
+
+    return {
+        "reply": reply,
+        "score_result": inputs["score_result"],
+        "persistent_score": inputs["persistent_score"],
+        "risk_level": inputs["risk_level"],
+        "evidence": evidence,
+    }
+
+
 ### 构建runnable组件
-reply_step = RunnableLambda(lambda x: {
-    "reply": generate_supportive_reply(
-        user_text=x["user_text"],
-        risk_level=x["risk_level"],
-        persistent_score=int(x["persistent_score"]),
-        evidence=_format_evidence(x["score_result"]["details"]),
-    ),
-    "score_result": x["score_result"],
-    "persistent_score": x["persistent_score"],
-    "risk_level": x["risk_level"],
-    "evidence": _format_evidence(x["score_result"]["details"]),
-})
+reply_step = RunnableLambda(_reply_with_memory)

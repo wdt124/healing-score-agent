@@ -1,4 +1,4 @@
-from knowledge_loader import KnowledgeBase
+from app.prompt.knowledge_loader import KnowledgeBase
 
 kb = KnowledgeBase()
 

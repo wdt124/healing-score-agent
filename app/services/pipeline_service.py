@@ -6,7 +6,6 @@ from app.services.scoring_service import scoring_step
 from app.services.memory_service import memory_step
 from app.services.crisis_service import crisis_step
 from app.services.llm_service import reply_step
-from app.core.config import settings
 
 ### 管道
 chain = (scoring_step
@@ -33,6 +32,6 @@ def run_pipeline(
         "risk_level": result["risk_level"],
         "score": result.get("persistent_score", score_res["predicted_sds_score"]),
         "evidence": result.get("evidence", []),
-        "model_provider": settings.llm_provider,
-        "model_name": settings.llm_model,
+        "model_provider": "deepseek",
+        "model_name": "deepseek-chat",
     }
