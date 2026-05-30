@@ -9,6 +9,7 @@ from app.safety.policy_engine import safety_policy_step_fn
 from app.risk.risk_state_memory import _risk_state, RiskObservation
 from app.models.schemas import RiskSignalBrief
 from app.risk.audit import write_audit_record
+from app.core.config import settings
 import time
 
 risk_assessment_step = RunnableLambda(risk_assessment_step_fn)
@@ -107,7 +108,7 @@ def run_pipeline(
         primary_drivers=assessment.primary_drivers if assessment else [],
     )
 
-    persistent_score = result.get("persistent_score", score_res["predicted_sds_score"])
+    persistent_score = result.get("persistent_score") or score_res.get("predicted_sds_score", 0)
 
     evidence = _build_low_sensitivity_evidence(persistent_score, assessment)
 
@@ -127,8 +128,8 @@ def run_pipeline(
         "risk_level": result["risk_level"],
         "score": persistent_score,
         "evidence": evidence,
-        "model_provider": "deepseek",
-        "model_name": "deepseek-chat",
+        "model_provider": settings.llm_provider,
+        "model_name": settings.llm_model,
         "safety_mode": safety.mode if safety else None,
         "safety_actions": safety.required_actions if safety else [],
         "risk_signals": risk_signals_brief if risk_signals_brief else None,

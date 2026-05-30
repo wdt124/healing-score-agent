@@ -4,11 +4,13 @@
 用于回归追踪、行为审计和策略版本管理。
 """
 
+import atexit
 import json
 import os
 import time
 from typing import List
 from dataclasses import dataclass, field, asdict
+from app.core.config import settings
 
 
 @dataclass
@@ -68,6 +70,13 @@ class AuditLogger:
 _audit_logger = AuditLogger()
 
 
+def _cleanup() -> None:
+    _audit_logger.clear()
+
+
+atexit.register(_cleanup)
+
+
 def write_audit_record(
     session_id: str,
     assessment_version: str,
@@ -76,8 +85,10 @@ def write_audit_record(
     safety_mode: str,
     signal_names: List[str],
     primary_drivers: List[str],
-    model_used: str = "deepseek-chat",
+    model_used: str = "",
 ) -> None:
+    if not model_used:
+        model_used = settings.llm_model
     record = RiskAuditRecord(
         session_id=session_id,
         timestamp=time.time(),

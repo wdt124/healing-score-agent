@@ -42,7 +42,7 @@ class UnifiedDepressionEngine:
         
         # 2. 配置 API 密钥
         self.model = ChatOpenAI(
-            model='deepseek-chat',
+            model=settings.llm_model,
             api_key=settings.api_key,
             base_url=settings.base_url,
             temperature=0.0
@@ -78,7 +78,7 @@ class UnifiedDepressionEngine:
             # 捕获所有 API 异常或结构化解析异常
             print(f"⚠️ 文本特征提取失败，启用安全降级机制: {e}")
 
-            # 如果大模型调用失败或解析错误，返回全 0 的安全底线
+        # 如果大模型调用失败或解析错误，返回全 0 的安全底线
         return {k: 0 for k in self.TEXT_FEATURE_KEYS}
 
     def _extract_audio_features(self, audio_path):

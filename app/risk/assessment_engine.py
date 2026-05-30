@@ -39,8 +39,11 @@ def _determine_risk_level(
     has_repeated = "repeated_high_risk_signal" in trend_names
     has_sustained = "sustained_elevated_risk" in trend_names
 
-    # 所有高危信号都被否定 → 回退为正常
+    # 所有高危信号都被否定 → 回退，但趋势信号存在时不应完全降为 normal
     if context_flags.get("all_high_negated") and not has_cant_stay_safe:
+        # 有持续高位 / 反复高危趋势 → 至少保留 medium
+        if has_sustained or has_repeated:
+            return "medium"
         return "normal"
 
     # 方法 + (时间 或 准备) → critical

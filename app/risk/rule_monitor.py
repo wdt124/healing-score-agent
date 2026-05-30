@@ -63,12 +63,8 @@ def _find_all_matches(text: str, pattern: str) -> List[int]:
 def scan_signals(user_text: str) -> List[RiskSignal]:
     """扫描用户文本，返回所有匹配的风险信号（含上下文置信度调整）"""
     signals: List[RiskSignal] = []
-    seen_names: set = set()  # 避免同一条规则重复命中
 
     for rule in ALL_SIGNAL_RULES:
-        if rule.name in seen_names:
-            continue
-
         matched_patterns: List[Tuple[str, int]] = []
         for pattern in rule.patterns:
             positions = _find_all_matches(user_text, pattern)
@@ -77,8 +73,6 @@ def scan_signals(user_text: str) -> List[RiskSignal]:
 
         if not matched_patterns:
             continue
-
-        seen_names.add(rule.name)
 
         # 取第一个匹配位置作为上下文检测的输入
         first_match = min(matched_patterns, key=lambda x: x[1])

@@ -12,7 +12,10 @@
 '''
 
 import os
+import logging
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 from app.models.scoring_engine import UnifiedDepressionEngine
 from langchain_core.runnables import RunnableLambda
 
@@ -35,7 +38,7 @@ def _get_engine() -> UnifiedDepressionEngine:
 
 def score_text_and_audio(text: str, audio_path: Optional[str] = None) -> dict:
     result = _get_engine().predict(text=text, audio_path=audio_path)
-    print(f"instance_score:{result['predicted_sds_score']}")
+    logger.info("instance_score: %s", result["predicted_sds_score"])
 
     return result
 

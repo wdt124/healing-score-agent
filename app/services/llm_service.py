@@ -46,11 +46,11 @@ def _get_llm() -> ChatOpenAI:
     global _llm_client
     if _llm_client is None:
         _llm_client = ChatOpenAI(
-            model="deepseek-chat",
+            model=settings.llm_model,
             api_key=settings.api_key,
             base_url=settings.base_url,
             temperature=0.7,
-            max_tokens=256,
+            max_tokens=512,
         )
     assert _llm_client is not None
     return _llm_client
@@ -78,7 +78,7 @@ def _call_llm(prompt: str, system: str = "") -> str:
 def generate_supportive_reply(
     user_text: str,
     risk_level: str,
-    persistent_score: int,
+    persistent_score: float,
     evidence: list[str],
     conversation_history: str = "",
     safety_decision=None,
@@ -179,7 +179,7 @@ def _reply_with_memory(inputs: dict) -> dict:
     reply = generate_supportive_reply(
         user_text=inputs["user_text"],
         risk_level=inputs["risk_level"],
-        persistent_score=int(inputs["persistent_score"]),
+        persistent_score=float(inputs["persistent_score"]),
         evidence=evidence,
         conversation_history=history,
         safety_decision=safety_decision,
