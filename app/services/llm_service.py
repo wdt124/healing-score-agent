@@ -81,35 +81,50 @@ def generate_supportive_reply(
     persistent_score: int,
     evidence: list[str],
     conversation_history: str = "",
+    safety_decision=None,
+    risk_assessment=None,
 ) -> str:
+    # 优先使用 SafetyDecision 中的约束来生成 extra_instruction
+    if safety_decision is not None:
+        safety_mode = safety_decision.mode
+        extra_instruction = safety_decision.response_constraints
+    else:
+        safety_mode = risk_level
+        extra_instruction = ""
 
-    if risk_level == "high":
-        extra_instruction = (
-            "当前用户表现出高风险。"
-            "请优先表达关切和陪伴感，明确建议其尽快联系现实中的可信任对象、心理援助热线或医疗资源。"
-            "不要做轻率安慰，不要淡化风险，不要给出医学诊断。"
-        )
+    if safety_mode in ("crisis_intervention", "high"):
+        if not extra_instruction:
+            extra_instruction = (
+                "当前用户表现出高风险。"
+                "请优先表达关切和陪伴感，明确建议其尽快联系现实中的可信任对象、心理援助热线或医疗资源。"
+                "不要做轻率安慰，不要淡化风险，不要给出医学诊断。"
+            )
         refs = ["crisis-resources", "suicide-prevention"]
-    elif risk_level == "medium":
-        extra_instruction = (
-            "当前用户表现出中等风险。"
-            "请表达理解与支持，并鼓励其继续描述当前最困扰的问题。"
-        )
+    elif safety_mode in ("safety_planning", "medium"):
+        if not extra_instruction:
+            extra_instruction = (
+                "当前用户表现出中等风险。"
+                "请表达理解与支持，并鼓励其继续描述当前最困扰的问题。"
+            )
         refs = ["emotion-support", "cbt-techniques"]
-    elif risk_level == "low":
-        extra_instruction = (
-            "当前用户风险较低。"
-            "请给出温和、支持性、开放式的回应。"
-        )
+    elif safety_mode in ("supportive_checkin", "low"):
+        if not extra_instruction:
+            extra_instruction = "当前用户风险较低。请给出温和、支持性、开放式的回应。"
         refs = ["emotion-support", "meditation-scripts"]
-    elif risk_level == "normal":
-        extra_instruction = (
-            "当前用户无抑郁症风险，请正常交流"
-        )
+    elif safety_mode in ("normal_support", "normal"):
+        if not extra_instruction:
+            extra_instruction = "当前用户无抑郁症风险，请正常交流"
         refs = []
     else:
-        extra_instruction = "请给出温和、支持性的回应。"
+        extra_instruction = extra_instruction or "请给出温和、支持性的回应。"
         refs = []
+
+    # 将 safety_decision 的 forbid/require 注入 extra_instruction
+    if safety_decision is not None:
+        if safety_decision.forbidden_actions:
+            extra_instruction += " 禁止行为: " + "; ".join(safety_decision.forbidden_actions) + "。"
+        if safety_decision.required_actions:
+            extra_instruction += " 必须行为: " + "; ".join(safety_decision.required_actions) + "。"
 
     kb = _get_kb()
     prompt_knowledge = kb.generate_prompt(include_refs=refs)
@@ -131,7 +146,7 @@ def generate_supportive_reply(
     return _call_llm(prompt, system=system_prompt)
 
 
-def _format_evidence(details: dict) -> list:
+def _format_evidence(details: dict) -> list[str]:
     evidence = []
     text_features = details.get("text_features_extracted", {})
     if text_features:
@@ -158,12 +173,17 @@ def _reply_with_memory(inputs: dict) -> dict:
     history = _conversation_memory.get_history_text(session_id)
     evidence = _format_evidence(inputs["score_result"]["details"])
 
+    safety_decision = inputs.get("safety_decision")
+    risk_assessment = inputs.get("risk_assessment")
+
     reply = generate_supportive_reply(
         user_text=inputs["user_text"],
         risk_level=inputs["risk_level"],
         persistent_score=int(inputs["persistent_score"]),
         evidence=evidence,
         conversation_history=history,
+        safety_decision=safety_decision,
+        risk_assessment=risk_assessment,
     )
 
     _conversation_memory.add_turn(session_id, inputs["user_text"], reply)
@@ -174,6 +194,8 @@ def _reply_with_memory(inputs: dict) -> dict:
         "persistent_score": inputs["persistent_score"],
         "risk_level": inputs["risk_level"],
         "evidence": evidence,
+        "risk_assessment": risk_assessment,
+        "safety_decision": safety_decision,
     }
 
 

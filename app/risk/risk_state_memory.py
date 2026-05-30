@@ -1,0 +1,141 @@
+"""风险状态记忆
+
+与 ConversationMemory 分离，只保存风险观察（分数/等级/信号摘要），
+不保存完整用户原文，降低敏感数据扩散。
+"""
+
+import atexit
+import json
+import os
+import time
+from typing import Dict, List, Optional
+from dataclasses import dataclass, field, asdict
+
+
+@dataclass
+class RiskObservation:
+    session_id: str
+    timestamp: float
+    instant_sds_score: float
+    persistent_sds_score: float
+    risk_level: str
+    safety_mode: str = ""
+    signal_names: List[str] = field(default_factory=list)
+    protective_names: List[str] = field(default_factory=list)
+    primary_drivers: List[str] = field(default_factory=list)
+
+    def to_serializable(self) -> dict:
+        d = asdict(self)
+        d["timestamp"] = self.timestamp
+        return d
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "RiskObservation":
+        return cls(**d)
+
+
+class RiskStateMemory:
+    """存储每轮风险观察，不存用户原文。
+
+    提供窗口查询方法，供 trend_detector 使用。
+    """
+
+    def __init__(self, filepath: str = ""):
+        if not filepath:
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            filepath = os.path.join(current_dir, "..", "..", "data", "risk_history.json")
+        self._filepath = os.path.abspath(filepath)
+        self._store: Dict[str, List[RiskObservation]] = {}
+        self._load_from_file()
+
+    def _load_from_file(self) -> None:
+        if not os.path.exists(self._filepath):
+            return
+        try:
+            with open(self._filepath, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            for session_id, records in data.items():
+                self._store[session_id] = [
+                    RiskObservation.from_dict(r) for r in records
+                ]
+        except (json.JSONDecodeError, KeyError, TypeError):
+            pass
+
+    def _save_to_file(self) -> None:
+        os.makedirs(os.path.dirname(self._filepath), exist_ok=True)
+        serializable: Dict[str, list] = {}
+        for session_id, observations in self._store.items():
+            serializable[session_id] = [o.to_serializable() for o in observations]
+        with open(self._filepath, "w", encoding="utf-8") as f:
+            json.dump(serializable, f, ensure_ascii=False, indent=2)
+
+    def add_observation(self, session_id: str, observation: RiskObservation) -> None:
+        if session_id not in self._store:
+            self._store[session_id] = []
+        self._store[session_id].append(observation)
+        self._save_to_file()
+
+    def get_recent_observations(self, session_id: str, limit: int = 5) -> List[RiskObservation]:
+        records = self._store.get(session_id, [])
+        return records[-limit:]
+
+    def get_score_delta(self, session_id: str, window: int = 3) -> Optional[float]:
+        """最近 window 轮的 persistent_score 变化量"""
+        records = self.get_recent_observations(session_id, limit=window)
+        if len(records) < 2:
+            return None
+        return records[-1].persistent_sds_score - records[0].persistent_sds_score
+
+    def count_signal(self, session_id: str, signal_name: str, window: int = 5) -> int:
+        """最近 window 轮内，指定信号名出现的轮次计数"""
+        records = self.get_recent_observations(session_id, limit=window)
+        return sum(1 for r in records if signal_name in r.signal_names)
+
+    def get_level_trend(self, session_id: str, window: int = 3) -> Optional[str]:
+        """最近 window 轮等级的趋势方向
+
+        Returns:
+            "worsening" / "improving" / "stable" / None（数据不足）
+        """
+        records = self.get_recent_observations(session_id, limit=window)
+        if len(records) < 2:
+            return None
+
+        level_weights = {"normal": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
+        levels = [level_weights.get(r.risk_level, 0) for r in records]
+
+        if len(set(levels)) == 1:
+            return "stable"
+
+        # 连续上升
+        if all(levels[i] >= levels[i - 1] for i in range(1, len(levels))) and levels[-1] > levels[0]:
+            return "worsening"
+
+        # 连续下降
+        if all(levels[i] <= levels[i - 1] for i in range(1, len(levels))) and levels[-1] < levels[0]:
+            return "improving"
+
+        return "stable"
+
+    def get_recent_levels(self, session_id: str, window: int = 3) -> List[str]:
+        records = self.get_recent_observations(session_id, limit=window)
+        return [r.risk_level for r in records]
+
+    def clear(self, session_id: str) -> None:
+        self._store.pop(session_id, None)
+        self._save_to_file()
+
+    def clear_all(self) -> None:
+        self._store.clear()
+        if os.path.exists(self._filepath):
+            os.remove(self._filepath)
+
+
+_risk_state = RiskStateMemory()
+
+
+def _cleanup() -> None:
+    _risk_state.clear_all()
+
+
+atexit.register(_cleanup)
