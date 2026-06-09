@@ -1,23 +1,17 @@
+"""评分服务
 
-### runnable组件 scoring_step
-'''scoring_step:
-        input:
-            user_text: str
-            audio_path
-            session_id: str
-        output:
-            user_text
-            session_id
-            score_result
-'''
+scoring_step — 管道第一步：调用 UnifiedDepressionEngine 产出 SDS 分数。
+"""
 
-import os
 import logging
+import os
 from typing import Optional
 
-logger = logging.getLogger(__name__)
-from app.models.scoring_engine import UnifiedDepressionEngine
 from langchain_core.runnables import RunnableLambda
+
+from app.models.scoring_engine import UnifiedDepressionEngine
+
+logger = logging.getLogger(__name__)
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 v1_path = os.path.abspath(os.path.join(current_dir, "..", "models", "eatd_rf_model_v1.joblib"))

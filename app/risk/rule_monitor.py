@@ -1,10 +1,8 @@
 """规则监测引擎
 
-将 app/core/safety.py 的 bool 关键词检测升级为结构化 RiskSignal 输出。
 - 扫描用户文本，匹配直接高危 / 中风险辅助规则模式
 - 对每个命中检查上下文误报（否定/转述/假设/过去已解决）
 - 检测保护因素
-- 返回带置信度和元数据的 RiskSignal 列表
 """
 
 from typing import List, Tuple, Optional
@@ -79,34 +77,19 @@ def scan_signals(user_text: str) -> List[RiskSignal]:
         first_pos = first_match[1]
         ctx_key = _check_context(user_text, first_pos)
 
-        confidence = rule.severity
-        evidence = first_match[0]
+        first_pattern = first_match[0]
         metadata: dict = {
-            "rule_name": rule.name,
             "rule_category": rule.category,
-            "matched_patterns": [p for p, _ in matched_patterns],
         }
 
         if ctx_key is not None:
-            ctx_info = CONTEXT_MARKERS[ctx_key]
             metadata["context_flag"] = ctx_key
-            metadata["context_note"] = ctx_info["label"]
-            # 降低置信度；否定 > 转述 > 假设 > 过去已解决
-            confidence_reduction = {
-                "negated_risk": 0.85,
-                "quoted_or_reported": 0.7,
-                "hypothetical": 0.8,
-                "past_resolved": 0.6,
-            }
-            confidence = max(0.05, confidence * (1.0 - confidence_reduction.get(ctx_key, 0.5)))
 
         signals.append(RiskSignal(
             source="rule",
             name=rule.name,
-            label=f"[{rule.category}] {rule.description}: {evidence}",
+            label=f"[{rule.category}] {rule.description}: {first_pattern}",
             severity=rule.severity,
-            confidence=round(confidence, 2),
-            evidence=evidence,
             metadata=metadata,
         ))
 
@@ -125,12 +108,7 @@ def scan_protective_factors(user_text: str) -> List[RiskSignal]:
                     name=rule.name,
                     label=f"[{rule.category}] {rule.description}: {pattern}",
                     severity=0.0,
-                    confidence=0.7,
-                    evidence=pattern,
-                    metadata={
-                        "rule_name": rule.name,
-                        "rule_category": rule.category,
-                    },
+                    metadata={"rule_category": rule.category},
                 ))
                 break  # 每条保护因素规则只记录一次
 

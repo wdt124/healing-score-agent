@@ -1,17 +1,10 @@
-###
-# predicted_sds_score >= 73 -> high ,
-# predicted_sds_score >= 63 -> medium ,
-# predicted_sds_score >= 53 -> low ,
-# predicted_sds_score < 53 -> normal .
-
 import os
 import warnings
 import numpy as np
 import joblib
 import librosa
 from typing_extensions import TypedDict, Annotated
-from langchain_openai import ChatOpenAI
-from app.core.config import settings
+from app.core.llm_client import LLMClientManager
 
 # 忽略 librosa 可能产生的某些库警告，保持控制台干净
 warnings.filterwarnings('ignore')
@@ -40,13 +33,8 @@ class UnifiedDepressionEngine:
         self.text_scorer_v1 = joblib.load(v1_model_path)
         self.multimodal_scorer_v2 = joblib.load(v2_model_path)
         
-        # 2. 配置 API 密钥
-        self.model = ChatOpenAI(
-            model=settings.llm_model,
-            api_key=settings.api_key,
-            base_url=settings.base_url,
-            temperature=0.0
-        )
+        # 2. 获取评分专用 LLM 客户端 (temperature=0.0)
+        self.model = LLMClientManager.get_scoring_client()
 
         # 强制特征顺序列表
         self.TEXT_FEATURE_KEYS = ["anhedonia", "depressed", "sleep", "fatigue", "appetite", "guilt", "concentrate", "movement"]

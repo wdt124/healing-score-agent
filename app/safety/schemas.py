@@ -10,6 +10,7 @@ class SafetyDecision(BaseModel):
     required_actions: List[str] = Field(default_factory=list)
     forbidden_actions: List[str] = Field(default_factory=list)
     response_constraints: str = Field(default="")
-    resources_to_offer: List[str] = Field(default_factory=list)
-    follow_up_questions: List[str] = Field(default_factory=list)
-    audit_tags: List[str] = Field(default_factory=list)
+    reference_modules: List[str] = Field(
+        default_factory=list,
+        description="需要注入 LLM prompt 的知识库参考模块名列表",
+    )

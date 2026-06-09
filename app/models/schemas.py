@@ -13,7 +13,6 @@ class RiskSignalBrief(BaseModel):
     name: str
     source: str
     severity: float
-    confidence: float
 
 
 class ChatResponse(BaseModel):
@@ -29,5 +28,3 @@ class ChatResponse(BaseModel):
     safety_mode: Optional[str] = None
     safety_actions: Optional[List[str]] = None
     risk_signals: Optional[List[RiskSignalBrief]] = None
-    assessment_version: Optional[str] = None
-    policy_version: Optional[str] = None

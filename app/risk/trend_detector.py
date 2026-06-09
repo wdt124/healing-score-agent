@@ -11,6 +11,7 @@
 from typing import List, Optional
 from app.risk.schemas import RiskSignal
 from app.risk.risk_state_memory import _risk_state
+from app.risk.thresholds import SDS_THRESHOLDS
 
 
 def _detect_rapid_worsening(session_id: str) -> Optional[RiskSignal]:
@@ -30,9 +31,6 @@ def _detect_rapid_worsening(session_id: str) -> Optional[RiskSignal]:
             name="rapid_worsening",
             label=f"最近3轮 SDS 连续上升（{scores[0]:.0f}→{scores[1]:.0f}→{scores[2]:.0f}）",
             severity=severity,
-            confidence=0.75,
-            evidence=f"score delta: +{delta:.0f} over 3 rounds",
-            metadata={"trend_type": "score_increase", "delta": delta},
         )
 
     # 等级快速跳跃（从 normal/low 直接到 high）
@@ -45,9 +43,6 @@ def _detect_rapid_worsening(session_id: str) -> Optional[RiskSignal]:
             name="rapid_worsening",
             label=f"风险等级快速上升（{records[0].risk_level}→{records[-1].risk_level}）",
             severity=0.80,
-            confidence=0.75,
-            evidence=f"level jump: {records[0].risk_level} → {records[-1].risk_level}",
-            metadata={"trend_type": "level_jump"},
         )
 
     return None
@@ -75,9 +70,6 @@ def _detect_repeated_high_risk_signal(session_id: str) -> Optional[RiskSignal]:
             name="repeated_high_risk_signal",
             label=f"最近5轮中{rounds_with_high}轮出现高危信号",
             severity=0.75,
-            confidence=0.80 if rounds_with_high >= 3 else 0.65,
-            evidence=f"{rounds_with_high}/5 rounds with high-risk signals",
-            metadata={"trend_type": "repeated_high", "count": rounds_with_high},
         )
 
     # 也检查绝望/撑不下去等中风险信号反复出现
@@ -93,9 +85,6 @@ def _detect_repeated_high_risk_signal(session_id: str) -> Optional[RiskSignal]:
             name="repeated_high_risk_signal",
             label=f"最近5轮中{rounds_with_medium}轮出现中高危信号",
             severity=0.55,
-            confidence=0.65,
-            evidence=f"{rounds_with_medium}/5 rounds with distress signals",
-            metadata={"trend_type": "repeated_medium", "count": rounds_with_medium},
         )
 
     return None
@@ -121,23 +110,17 @@ def _detect_sustained_elevated_risk(session_id: str) -> Optional[RiskSignal]:
             name="sustained_elevated_risk",
             label=f"连续{consecutive}轮处于中等及以上风险",
             severity=min(0.85, 0.5 + 0.1 * consecutive),
-            confidence=0.70 + 0.05 * min(consecutive, 4),
-            evidence=f"{consecutive} consecutive rounds at elevated risk",
-            metadata={"trend_type": "sustained", "consecutive_rounds": consecutive},
         )
 
     # 检查 EMA 分数是否长期高于 medium 阈值
     if len(records) >= 4:
-        above_63 = sum(1 for r in records[-4:] if r.persistent_sds_score >= 63)
-        if above_63 >= 4:
+        above_threshold = sum(1 for r in records[-4:] if r.persistent_sds_score >= SDS_THRESHOLDS.MEDIUM)
+        if above_threshold >= 4:
             return RiskSignal(
                 source="trend",
                 name="sustained_elevated_risk",
-                label=f"近4轮 SDS 分数持续≥63",
+                label=f"近4轮 SDS 分数持续≥{int(SDS_THRESHOLDS.MEDIUM)}",
                 severity=0.60,
-                confidence=0.65,
-                evidence=f"{above_63}/4 rounds with SDS >= 63",
-                metadata={"trend_type": "sustained_sds"},
             )
 
     return None
@@ -162,7 +145,6 @@ def _detect_protective_factor_drop(session_id: str) -> Optional[RiskSignal]:
     )
 
     if has_protective_in_past and not has_protective_recently:
-        # 检查最近是否出现了孤立相关信号
         recent_isolation = any(
             "social_isolation" in r.signal_names for r in recent_records
         )
@@ -173,9 +155,6 @@ def _detect_protective_factor_drop(session_id: str) -> Optional[RiskSignal]:
             name="protective_factor_drop",
             label="保护因素减少，之前存在的支持/求助信号近期消失",
             severity=severity,
-            confidence=0.60,
-            evidence="protective factors present in earlier rounds but absent recently",
-            metadata={"trend_type": "protective_drop"},
         )
 
     return None

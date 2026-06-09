@@ -1,16 +1,15 @@
 """风险评估引擎集成测试"""
 import pytest
 from app.risk.assessment_engine import build_risk_assessment
+from app.risk.rule_monitor import scan_all
 from app.risk.risk_state_memory import _risk_state
 
 
-def _assess(user_text: str, risk_level: str = "normal", persistent_score: float = 40.0,
+def _assess(user_text: str, persistent_score: float = 40.0,
             session_id: str = "test_engine_session"):
     return build_risk_assessment(
-        user_text=user_text,
-        risk_level=risk_level,
         persistent_score=persistent_score,
-        evidence=[],
+        scan_result=scan_all(user_text),
         session_id=session_id,
     )
 
@@ -80,8 +79,6 @@ class TestRiskAssessmentOutput:
         assessment = _assess("我想死")
         assert hasattr(assessment, "level")
         assert hasattr(assessment, "score")
-        assert hasattr(assessment, "sds_score")
-        assert hasattr(assessment, "confidence")
         assert hasattr(assessment, "signals")
         assert hasattr(assessment, "protective_factors")
         assert hasattr(assessment, "escalation_required")

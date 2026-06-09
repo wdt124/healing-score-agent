@@ -4,7 +4,6 @@
 用于回归追踪、行为审计和策略版本管理。
 """
 
-import atexit
 import json
 import os
 import time
@@ -68,13 +67,6 @@ class AuditLogger:
 
 
 _audit_logger = AuditLogger()
-
-
-def _cleanup() -> None:
-    _audit_logger.clear()
-
-
-atexit.register(_cleanup)
 
 
 def write_audit_record(

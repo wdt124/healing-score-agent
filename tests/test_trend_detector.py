@@ -3,6 +3,7 @@ import pytest
 import time
 from app.risk.risk_state_memory import _risk_state, RiskObservation
 from app.risk.trend_detector import detect_trends
+from app.risk.rule_monitor import scan_all
 
 
 def _feed_observations(session_id: str, rounds: list[dict]) -> None:
@@ -39,7 +40,6 @@ class TestRapidWorsening:
 
         rapid = [s for s in signals if s.name == "rapid_worsening"][0]
         assert rapid.source == "trend"
-        assert rapid.metadata["trend_type"] == "score_increase"
         _risk_state.clear(test_sess)
 
     def test_level_jump_from_low_to_high(self):
@@ -84,7 +84,7 @@ class TestRepeatedHighRisk:
         assert "repeated_high_risk_signal" in names
 
         s = [x for x in signals if x.name == "repeated_high_risk_signal"][0]
-        assert s.metadata["count"] >= 2
+        assert s.severity >= 0.7
         _risk_state.clear(test_sess)
 
     def test_three_hopelessness_in_five_rounds(self):
@@ -249,10 +249,8 @@ class TestTrendAwareAssessment:
 
         # 当前轮文本看起来"正常"，分数也低
         assessment = build_risk_assessment(
-            user_text="今天还可以",
-            risk_level="normal",
             persistent_score=50.0,
-            evidence=[],
+            scan_result=scan_all("今天还可以"),
             session_id=test_sess,
         )
 
@@ -263,25 +261,32 @@ class TestTrendAwareAssessment:
         _risk_state.clear(test_sess)
 
     def test_high_then_low_not_immediate_normal(self):
-        """验证：high 后下一轮分数低，不应立即降到 normal"""
+        """验证：连续高危后不应因单轮低分立即降到 normal
+
+        使用 3 轮连续高危观察，触发 sustained_elevated_risk 趋势信号，
+        验证趋势信号能阻止不合理降级。
+        """
         from app.risk.assessment_engine import build_risk_assessment
 
         test_sess = "test_high_then_low"
         _feed_observations(test_sess, [
-            {"persistent_sds_score": 88.0, "risk_level": "high",
+            {"persistent_sds_score": 85.0, "risk_level": "high",
              "signal_names": ["suicide_ideation"]},
+            {"persistent_sds_score": 88.0, "risk_level": "high",
+             "signal_names": ["suicide_ideation", "hopelessness"]},
+            {"persistent_sds_score": 82.0, "risk_level": "high",
+             "signal_names": ["hopelessness"]},
         ])
 
         assessment = build_risk_assessment(
-            user_text="我今天心情好多了",
-            risk_level="low",
             persistent_score=50.0,
-            evidence=[],
+            scan_result=scan_all("我今天心情好多了"),
             session_id=test_sess,
         )
 
-        assert assessment.level in ("medium", "high", "low"), (
-            f"前轮高危应保留一定警惕性，实际等级: {assessment.level}"
+        # sustained 趋势应阻止直接降为 normal
+        assert assessment.level in ("medium", "high"), (
+            f"连续高危后不应直接降为 normal，实际等级: {assessment.level}"
         )
         _risk_state.clear(test_sess)
 
@@ -297,10 +302,8 @@ class TestTrendAwareAssessment:
         ])
 
         assessment = build_risk_assessment(
-            user_text="今天天气不错",
-            risk_level="normal",
             persistent_score=50.0,
-            evidence=[],
+            scan_result=scan_all("今天天气不错"),
             session_id=test_sess,
         )
 

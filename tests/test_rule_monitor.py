@@ -62,17 +62,18 @@ class TestMediumAuxiliary:
 class TestFalsePositiveReduction:
     """降低误报规则"""
 
-    def test_negated_risk_not_high_confidence(self):
+    def test_negated_risk_context_flag(self):
+        """否定表达的 suicide_ideation 应被标记 context_flag='negated_risk'"""
         result = scan_all("我没有想自杀")
         risk_signals = result["risk_signals"]
-        # 可能有关键词匹配，但置信度应被大幅降低
-        if risk_signals:
-            for s in risk_signals:
-                if s.name == "suicide_ideation":
-                    assert s.confidence < 0.5, (
-                        f"否定表达的 suicide_ideation 置信度应显著降低，"
-                        f"实际为 {s.confidence}"
-                    )
+        # 否定语境下 suicide_ideation 应存在但带有 negated_risk 标记
+        suicide_signals = [s for s in risk_signals if s.name == "suicide_ideation"]
+        assert len(suicide_signals) >= 1
+        for s in suicide_signals:
+            assert s.metadata.get("context_flag") == "negated_risk", (
+                f"否定表达应有 negated_risk 标记，"
+                f"实际为 {s.metadata.get('context_flag')}"
+            )
         assert result["context_flags"]["has_negation"] is True
 
     def test_quoted_or_reported(self):

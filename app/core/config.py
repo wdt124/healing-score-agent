@@ -13,7 +13,6 @@ class Settings(BaseModel):
 
     llm_model: str = os.getenv("LLM_MODEL", "qwen2.5:1.5b")
     llm_provider: str = os.getenv("LLM_PROVIDER", "ollama")
-    ollama_base_url: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 
     api_key: str = os.getenv("API_KEY", "")
     base_url: str = os.getenv("BASE_URL", "")

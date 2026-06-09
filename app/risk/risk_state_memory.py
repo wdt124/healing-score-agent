@@ -4,11 +4,10 @@
 不保存完整用户原文，降低敏感数据扩散。
 """
 
-import atexit
 import json
 import os
 import time
-from typing import Dict, List, Optional
+from typing import Dict, List
 from dataclasses import dataclass, field, asdict
 
 
@@ -102,48 +101,6 @@ class RiskStateMemory:
         records = self._store.get(session_id, [])
         return records[-limit:]
 
-    def get_score_delta(self, session_id: str, window: int = 3) -> Optional[float]:
-        """最近 window 轮的 persistent_score 变化量"""
-        records = self.get_recent_observations(session_id, limit=window)
-        if len(records) < 2:
-            return None
-        return records[-1].persistent_sds_score - records[0].persistent_sds_score
-
-    def count_signal(self, session_id: str, signal_name: str, window: int = 5) -> int:
-        """最近 window 轮内，指定信号名出现的轮次计数"""
-        records = self.get_recent_observations(session_id, limit=window)
-        return sum(1 for r in records if signal_name in r.signal_names)
-
-    def get_level_trend(self, session_id: str, window: int = 3) -> Optional[str]:
-        """最近 window 轮等级的趋势方向
-
-        Returns:
-            "worsening" / "improving" / "stable" / None（数据不足）
-        """
-        records = self.get_recent_observations(session_id, limit=window)
-        if len(records) < 2:
-            return None
-
-        level_weights = {"normal": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
-        levels = [level_weights.get(r.risk_level, 0) for r in records]
-
-        if len(set(levels)) == 1:
-            return "stable"
-
-        # 连续上升
-        if all(levels[i] >= levels[i - 1] for i in range(1, len(levels))) and levels[-1] > levels[0]:
-            return "worsening"
-
-        # 连续下降
-        if all(levels[i] <= levels[i - 1] for i in range(1, len(levels))) and levels[-1] < levels[0]:
-            return "improving"
-
-        return "stable"
-
-    def get_recent_levels(self, session_id: str, window: int = 3) -> List[str]:
-        records = self.get_recent_observations(session_id, limit=window)
-        return [r.risk_level for r in records]
-
     def clear(self, session_id: str) -> None:
         self._store.pop(session_id, None)
         self._last_access.pop(session_id, None)
@@ -157,10 +114,3 @@ class RiskStateMemory:
 
 
 _risk_state = RiskStateMemory()
-
-
-def _cleanup() -> None:
-    _risk_state.clear_all()
-
-
-atexit.register(_cleanup)

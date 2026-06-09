@@ -8,8 +8,6 @@ def _make_assessment(level: str) -> RiskAssessment:
     return RiskAssessment(
         level=level,
         score=50.0,
-        sds_score=50.0,
-        confidence=0.7,
         primary_drivers=["测试"],
         signals=[],
         protective_factors=[],
@@ -73,18 +71,14 @@ class TestCrisisInterventionMode:
         required = " ".join(decision.required_actions)
         assert "热线" in required or "可信任" in required
 
-    def test_offers_crisis_resources(self):
-        decision = decide_safety_policy(_make_assessment("high"))
-        assert len(decision.resources_to_offer) > 0
-
     def test_has_response_constraints(self):
         decision = decide_safety_policy(_make_assessment("high"))
         assert len(decision.response_constraints) > 0
 
-    def test_audit_tags_include_high_risk(self):
+    def test_reference_modules_for_crisis(self):
         decision = decide_safety_policy(_make_assessment("high"))
-        assert any("risk:high" in tag for tag in decision.audit_tags)
-        assert any("safety:crisis" in tag for tag in decision.audit_tags)
+        assert "crisis-resources" in decision.reference_modules
+        assert "suicide-prevention" in decision.reference_modules
 
 
 class TestEmergencyEscalationMode:
@@ -100,11 +94,6 @@ class TestEmergencyEscalationMode:
         required = " ".join(decision.required_actions)
         assert "紧急" in required
 
-    def test_offers_emergency_numbers(self):
-        decision = decide_safety_policy(_make_assessment("critical"))
-        resources = " ".join(decision.resources_to_offer)
-        assert "110" in resources or "120" in resources
-
 
 class TestNormalSupportMode:
     """normal_support 模式"""
@@ -114,9 +103,9 @@ class TestNormalSupportMode:
         assert decision.required_actions == []
         assert decision.forbidden_actions == []
 
-    def test_no_resources_for_normal(self):
+    def test_no_reference_modules_for_normal(self):
         decision = decide_safety_policy(_make_assessment("normal"))
-        assert decision.resources_to_offer == []
+        assert decision.reference_modules == []
 
 
 class TestSafetyDecisionStructure:
@@ -128,9 +117,7 @@ class TestSafetyDecisionStructure:
         assert hasattr(decision, "required_actions")
         assert hasattr(decision, "forbidden_actions")
         assert hasattr(decision, "response_constraints")
-        assert hasattr(decision, "resources_to_offer")
-        assert hasattr(decision, "follow_up_questions")
-        assert hasattr(decision, "audit_tags")
+        assert hasattr(decision, "reference_modules")
 
 
 class TestSafetyPlanningMode:
