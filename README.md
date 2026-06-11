@@ -2,6 +2,34 @@
 
 一个心理支持对话 Agent 的后端原型，核心能力：接收用户输入文本，评估风险等级，产出带安全约束的支持性回复。
 
+## 快速开始
+
+```bash
+# 1. 安装依赖
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+
+# 2. 配置环境（填入 API_KEY）
+cp .env.example .env
+
+# 3. 放置 ML 模型到 app/models/（需向协作者获取 .joblib 文件）
+
+# 4. 启动服务
+uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+```bash
+# 健康检查
+curl http://127.0.0.1:8000/health
+
+# 发送消息
+curl -X POST http://127.0.0.1:8000/chat/message \
+  -H "Content-Type: application/json" \
+  -d '{"user_text": "最近总觉得很累", "session_id": "demo"}'
+```
+
+详细说明见 [docs/USAGE.md](docs/USAGE.md)，安全约束见 [docs/SAFETY.md](docs/SAFETY.md)。
+
 ## 项目定位
 
 - 把"风险检测 → 安全决策 → 生成回复"这条链路做得结构清晰、可解释、可扩展
@@ -60,11 +88,11 @@ shutdown → clear_data_files() → 清除 data/*.json/.jsonl（仅 dev）
   "risk_level": "high",
   "score": 88.0,
   "evidence": ["SDS 评分处于高区间", "命中direct_high_risk规则: suicide_ideation"],
+  "model_provider": "deepseek",
+  "model_name": "deepseek-chat",
   "safety_mode": "crisis_intervention",
-  "safety_actions": ["优先表达关切和陪伴感", "明确建议联系热线"],
-  "risk_signals": [{"name": "suicide_ideation", "source": "rule", "severity": 0.95}],
-  "assessment_version": "risk-assessment-v1",
-  "policy_version": "safety-policy-v1"
+  "safety_actions": ["优先表达关切和陪伴感", "明确建议联系现实中的可信任对象或心理援助热线"],
+  "risk_signals": [{"name": "suicide_ideation", "source": "rule", "severity": 0.95}]
 }
 ```
 
@@ -75,13 +103,11 @@ app/
 ├── main.py                     # FastAPI 入口 + shutdown 清理
 ├── api/
 │   ├── routes_chat.py          # POST /chat/message
-│   ├── routes_health.py        # GET /health
-│   └── routes_admin.py         # 管理接口（占位）
+│   └── routes_health.py        # GET /health
 ├── core/
 │   ├── config.py               # 环境变量配置
 │   ├── llm_client.py           # 统一 LLM 客户端管理
-│   ├── lifecycle.py            # 退出时 data/ 清理
-│   └── logger.py               # 日志
+│   └── lifecycle.py            # 退出时 data/ 清理
 ├── memory/
 │   └── score_smoother.py       # EMA 分数平滑器
 ├── models/
@@ -139,6 +165,9 @@ pytest tests/ -q  # 92 passed
 |------|------|
 | `API_KEY` | DeepSeek API Key |
 | `BASE_URL` | API 地址 |
-| `APP_ENV` | 环境：dev（退出清数据）/ production |
+| `APP_ENV` | 环境：`dev`（退出清数据）/ `prod`（保留数据） |
 | `LLM_MODEL` | 模型名称 |
-| `HOST` / `PORT` | 服务地址/端口（默认 127.0.0.1:8000） |
+| `LLM_PROVIDER` | 提供商标识（仅用于 API 响应展示） |
+| `HOST` / `PORT` | 已加载但未接入 uvicorn，启动时需命令行指定 |
+
+完整配置说明见 [docs/USAGE.md](docs/USAGE.md)。
