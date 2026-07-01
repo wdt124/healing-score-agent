@@ -31,14 +31,14 @@ pip install -r requirements.txt
 
 ## 3. ML 评分模型
 
-评分模块依赖两个本地模型文件，**不在 Git 仓库内**，需向项目协作者获取后放置到：
+评分模块依赖两个本地模型文件，当前已随仓库提交，默认位于：
 
 ```
 app/models/eatd_rf_model_v1.joblib
 app/models/eatd_multimodal_rf_model_v2.joblib
 ```
 
-若模型文件缺失，调用 `POST /chat/message` 时会在 `scoring_step` 阶段抛出 `FileNotFoundError`。
+若模型文件缺失，调用 `POST /chat/message` 时会在 `scoring_step` 阶段抛出 `FileNotFoundError`；请确认仓库已完整 clone/pull，且以下文件未被误删。
 
 | 模型 | 用途 |
 |------|------|
@@ -221,7 +221,7 @@ pytest tests/ -q
 FileNotFoundError: 找不到模型文件，请确保 .joblib 文件在当前目录下！
 ```
 
-**解决**：将 `eatd_rf_model_v1.joblib` 和 `eatd_multimodal_rf_model_v2.joblib` 放入 `app/models/`。
+**解决**：正常情况下仓库已包含这两个文件；若本地缺失，请重新拉取仓库，或确认 `app/models/` 中存在 `eatd_rf_model_v1.joblib` 和 `eatd_multimodal_rf_model_v2.joblib`。
 
 ### LLM 调用失败
 
