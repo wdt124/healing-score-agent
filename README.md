@@ -4,31 +4,59 @@
 
 ## 快速开始
 
-```bash
-# 1. 安装依赖
-python -m venv .venv && source .venv/bin/activate
+### Windows CMD
+
+```bat
+python -m venv .venv
+.venv\Scripts\activate
 pip install -r requirements.txt
 
-# 2. 配置环境（填入 API_KEY）
-cp .env.example .env
+copy .env.example .env
+notepad .env
 
-# 3. 确认 ML 模型文件已随仓库位于 app/models/
-
-# 4. 启动服务
 uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-```bash
-# 健康检查
-curl http://127.0.0.1:8000/health
+### Windows PowerShell
 
-# 发送消息
-curl -X POST http://127.0.0.1:8000/chat/message \
-  -H "Content-Type: application/json" \
-  -d '{"user_text": "最近总觉得很累", "session_id": "demo"}'
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+
+Copy-Item .env.example .env
+notepad .env
+
+uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-详细说明见 [docs/USAGE.md](docs/USAGE.md)，安全约束见 [docs/SAFETY.md](docs/SAFETY.md)。
+如果 PowerShell 阻止激活脚本，可在当前窗口临时执行：
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+```
+
+### Linux / macOS / Git Bash
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+
+cp .env.example .env
+nano .env
+
+uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+启动后可访问：
+
+```text
+http://127.0.0.1:8000/health
+http://127.0.0.1:8000/docs
+```
+
+发送消息示例见 [docs/USAGE.md](docs/USAGE.md)，安全约束见 [docs/SAFETY.md](docs/SAFETY.md)。
 
 ## 项目定位
 
