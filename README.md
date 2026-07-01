@@ -12,7 +12,7 @@ pip install -r requirements.txt
 # 2. 配置环境（填入 API_KEY）
 cp .env.example .env
 
-# 3. 放置 ML 模型到 app/models/（需向协作者获取 .joblib 文件）
+# 3. 确认 ML 模型文件已随仓库位于 app/models/
 
 # 4. 启动服务
 uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
