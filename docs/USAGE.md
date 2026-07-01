@@ -16,16 +16,49 @@
 
 ## 2. 安装
 
+先进入项目目录：
+
 ```bash
 cd healing-score-agent
+```
 
-# 创建虚拟环境（推荐）
+### Windows CMD
+
+```bat
 python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
-
-# 安装依赖
+.venv\Scripts\activate
 pip install -r requirements.txt
 ```
+
+### Windows PowerShell
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
+
+如果 PowerShell 提示禁止运行脚本，可在当前 PowerShell 窗口临时执行一次：
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+```
+
+然后重新执行：
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+### Linux / macOS / Git Bash
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+依赖只需要在首次创建虚拟环境后安装一次。以后重新打开终端，只要进入项目目录并激活 `.venv` 即可，不需要重复 `pip install -r requirements.txt`，除非 `requirements.txt` 有更新或你删除了 `.venv`。
 
 ---
 
@@ -49,11 +82,30 @@ app/models/eatd_multimodal_rf_model_v2.joblib
 
 ## 4. 环境配置
 
-复制配置模板并填入实际值：
+复制配置模板并填入实际值。
+
+### Windows CMD
+
+```bat
+copy .env.example .env
+notepad .env
+```
+
+### Windows PowerShell
+
+```powershell
+Copy-Item .env.example .env
+notepad .env
+```
+
+### Linux / macOS / Git Bash
 
 ```bash
 cp .env.example .env
+nano .env
 ```
+
+如果 `.env` 已经存在，以上复制命令可能会提示覆盖。你已经配置过 API Key 时，不要随便覆盖；直接打开 `.env` 修改即可。
 
 ### 推荐配置（DeepSeek 示例）
 
@@ -86,6 +138,8 @@ BASE_URL=https://api.deepseek.com/v1
 
 ## 5. 启动服务
 
+Windows CMD、Windows PowerShell、Linux/macOS/Git Bash 都可以使用同一条启动命令：
+
 ```bash
 uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
@@ -104,8 +158,16 @@ uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 
 ### 健康检查
 
+Windows CMD、PowerShell、Linux/macOS/Git Bash 一般都可以直接使用：
+
 ```bash
 curl http://127.0.0.1:8000/health
+```
+
+也可以直接在浏览器打开：
+
+```text
+http://127.0.0.1:8000/health
 ```
 
 响应示例：
@@ -114,7 +176,28 @@ curl http://127.0.0.1:8000/health
 {"status": "ok"}
 ```
 
-### 发送聊天消息
+### 发送聊天消息：Windows PowerShell
+
+```powershell
+$body = @{
+  user_text = "最近总觉得很累，什么都提不起劲"
+  session_id = "demo-session-001"
+} | ConvertTo-Json -Compress
+
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/chat/message" `
+  -Method Post `
+  -ContentType "application/json" `
+  -Body $body
+```
+
+### 发送聊天消息：Windows CMD
+
+```bat
+curl -X POST http://127.0.0.1:8000/chat/message -H "Content-Type: application/json" -d "{\"user_text\":\"最近总觉得很累，什么都提不起劲\",\"session_id\":\"demo-session-001\"}"
+```
+
+### 发送聊天消息：Linux / macOS / Git Bash
 
 ```bash
 curl -X POST http://127.0.0.1:8000/chat/message \
@@ -169,13 +252,30 @@ curl -X POST http://127.0.0.1:8000/chat/message \
 
 同一 `session_id` 下的对话历史会持久化到 `data/conversation_history.json`，并在后续请求中注入 LLM 上下文。
 
+### Windows PowerShell
+
+```powershell
+$body1 = @{ user_text = "最近睡不好"; session_id = "user-42" } | ConvertTo-Json -Compress
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/chat/message" -Method Post -ContentType "application/json" -Body $body1
+
+$body2 = @{ user_text = "已经持续两周了"; session_id = "user-42" } | ConvertTo-Json -Compress
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/chat/message" -Method Post -ContentType "application/json" -Body $body2
+```
+
+### Windows CMD
+
+```bat
+curl -X POST http://127.0.0.1:8000/chat/message -H "Content-Type: application/json" -d "{\"user_text\":\"最近睡不好\",\"session_id\":\"user-42\"}"
+curl -X POST http://127.0.0.1:8000/chat/message -H "Content-Type: application/json" -d "{\"user_text\":\"已经持续两周了\",\"session_id\":\"user-42\"}"
+```
+
+### Linux / macOS / Git Bash
+
 ```bash
-# 第一轮
 curl -X POST http://127.0.0.1:8000/chat/message \
   -H "Content-Type: application/json" \
   -d '{"user_text": "最近睡不好", "session_id": "user-42"}'
 
-# 第二轮（同一 session）
 curl -X POST http://127.0.0.1:8000/chat/message \
   -H "Content-Type: application/json" \
   -d '{"user_text": "已经持续两周了", "session_id": "user-42"}'
@@ -187,7 +287,31 @@ curl -X POST http://127.0.0.1:8000/chat/message \
 
 ## 8. 多模态评分（可选）
 
-在请求中提供本地音频路径可触发 V2 多模态模型：
+在请求中提供本地音频路径可触发 V2 多模态模型。音频文件需为服务端可读取的本地路径，格式需被 `librosa` 支持。
+
+### Windows PowerShell
+
+```powershell
+$body = @{
+  user_text = "最近情绪很低落"
+  session_id = "audio-demo"
+  audio_path = "C:/path/to/sample.wav"
+} | ConvertTo-Json -Compress
+
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/chat/message" `
+  -Method Post `
+  -ContentType "application/json" `
+  -Body $body
+```
+
+### Windows CMD
+
+```bat
+curl -X POST http://127.0.0.1:8000/chat/message -H "Content-Type: application/json" -d "{\"user_text\":\"最近情绪很低落\",\"session_id\":\"audio-demo\",\"audio_path\":\"C:/path/to/sample.wav\"}"
+```
+
+### Linux / macOS / Git Bash
 
 ```bash
 curl -X POST http://127.0.0.1:8000/chat/message \
@@ -199,11 +323,13 @@ curl -X POST http://127.0.0.1:8000/chat/message \
   }'
 ```
 
-音频文件需为服务端可读取的本地路径，格式需被 `librosa` 支持。
+Windows 路径建议在 JSON 里写成 `C:/path/to/sample.wav`，避免反斜杠转义问题。
 
 ---
 
 ## 9. 运行测试
+
+Windows CMD、Windows PowerShell、Linux/macOS/Git Bash 都可以使用：
 
 ```bash
 pytest tests/ -q
@@ -214,6 +340,36 @@ pytest tests/ -q
 ---
 
 ## 10. 常见问题
+
+### Windows 提示 `'cp' 不是内部或外部命令`
+
+`cp` 是 Linux/macOS/Git Bash 命令。Windows CMD 请使用：
+
+```bat
+copy .env.example .env
+```
+
+Windows PowerShell 请使用：
+
+```powershell
+Copy-Item .env.example .env
+```
+
+### Windows PowerShell 无法激活虚拟环境
+
+如果执行 `Activate.ps1` 时提示脚本被禁用，在当前 PowerShell 窗口运行：
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+```
+
+然后重新激活：
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+这个设置只对当前 PowerShell 窗口生效，不会永久改系统策略。
 
 ### 模型文件找不到
 
