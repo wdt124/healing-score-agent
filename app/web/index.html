@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="/health/ui/styles.css" />
 </head>
 <body>
-  <div class="shell">
+  <div class="shell" id="shell">
     <aside class="sidebar">
       <div class="brand">
         <div class="brand-mark">H</div>
@@ -27,7 +27,10 @@
           <h2 id="chatTitle">新建对话</h2>
           <p id="chatSubtitle">输入第一句话后会自动生成会话标题和 session_id</p>
         </div>
-        <button id="deleteSessionBtn" class="ghost">删除当前对话</button>
+        <div class="header-actions">
+          <button id="toggleDevBtn" class="ghost">开发者模式</button>
+          <button id="deleteSessionBtn" class="ghost">删除当前对话</button>
+        </div>
       </header>
 
       <section id="messages" class="messages">
@@ -55,6 +58,27 @@
         </div>
       </footer>
     </main>
+
+    <aside id="devPanel" class="dev-panel">
+      <div class="dev-header">
+        <div>
+          <h2>开发者模式</h2>
+          <p>执行链路、评分曲线与风险曲线</p>
+        </div>
+      </div>
+      <div class="dev-section">
+        <h3>本轮执行链路</h3>
+        <div id="devTrace" class="dev-trace">暂无请求</div>
+      </div>
+      <div class="dev-section">
+        <h3>评分曲线</h3>
+        <canvas id="scoreCanvas" width="320" height="150"></canvas>
+      </div>
+      <div class="dev-section">
+        <h3>风险等级曲线</h3>
+        <canvas id="riskCanvas" width="320" height="150"></canvas>
+      </div>
+    </aside>
   </div>
 
   <script src="/health/ui/app.js"></script>
