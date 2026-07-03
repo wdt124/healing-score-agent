@@ -1,5 +1,6 @@
-from fastapi import APIRouter
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Form, UploadFile, File
+from fastapi.responses import FileResponse, RedirectResponse
+from app.services.pipeline_service import run_pipeline
 
 router = APIRouter()
 
