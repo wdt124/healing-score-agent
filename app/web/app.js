@@ -1,4 +1,5 @@
 const KEY = "healing_agent_sessions_v1";
+const DEV_KEY = "healing_agent_dev_mode_v1";
 const $ = (id) => document.getElementById(id);
 
 let sessions = JSON.parse(localStorage.getItem(KEY) || "[]");
@@ -42,6 +43,8 @@ async function ensureSession(text) {
     title: shortTitle(text || "语音对话"),
     created_at: new Date().toISOString(),
     messages: [],
+    metrics: [],
+    lastTrace: null,
   };
   sessions.unshift(session);
   activeId = session.session_id;
@@ -55,6 +58,7 @@ function render() {
   renderHeader();
   renderMessages();
   renderAudio();
+  renderDevPanel();
 }
 
 function renderList() {
@@ -110,6 +114,21 @@ function renderMessages() {
   box.scrollTop = box.scrollHeight;
 }
 
+function showTyping() {
+  const box = $("messages");
+  const div = document.createElement("div");
+  div.id = "typingIndicator";
+  div.className = "message typing";
+  div.innerHTML = '<span>对方正在输入</span><span class="typing-dots"></span>';
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+}
+
+function hideTyping() {
+  const node = $("typingIndicator");
+  if (node) node.remove();
+}
+
 function renderAudio() {
   const draft = $("audioDraft");
   const preview = $("audioPreview");
@@ -140,6 +159,104 @@ async function uploadAudio(sessionId) {
   return (await resp.json()).audio_path;
 }
 
+function riskToValue(level) {
+  const key = String(level || "").toLowerCase();
+  if (key === "high") return 3;
+  if (key === "medium") return 2;
+  if (key === "low") return 1;
+  return 0;
+}
+
+function buildTrace(data, audioPath) {
+  return {
+    provider: data.model_provider || "-",
+    model: data.model_name || "-",
+    input: audioPath ? "文本 + 语音" : "文本",
+    scoring: audioPath ? "scoring_step：V2 多模态评分（文本语义 + 音频特征）" : "scoring_step：V1 文本评分",
+    memory: "memory_step：会话历史 + EMA 平滑",
+    risk: "risk_assessment_step：规则信号 + 趋势信号 + 综合等级",
+    safety: `safety_policy_step：${data.safety_mode || "默认安全策略"}`,
+    reply: "reply_step：带安全约束的 LLM 回复",
+    note: "展示的是可观测执行链路，不展示模型私有推理。",
+  };
+}
+
+function addMetric(session, data, audioPath) {
+  if (!session.metrics) session.metrics = [];
+  session.metrics.push({
+    t: new Date().toLocaleTimeString(),
+    score: Number(data.score || 0),
+    riskLevel: data.risk_level || "unknown",
+    riskValue: riskToValue(data.risk_level),
+    model: data.model_name || "-",
+    provider: data.model_provider || "-",
+    audio: Boolean(audioPath),
+  });
+  session.lastTrace = buildTrace(data, audioPath);
+  save();
+}
+
+function renderDevPanel() {
+  const shell = $("shell");
+  const enabled = localStorage.getItem(DEV_KEY) === "1";
+  shell.classList.toggle("dev-on", enabled);
+  const btn = $("toggleDevBtn");
+  if (btn) btn.textContent = enabled ? "关闭开发者模式" : "开发者模式";
+
+  const s = current();
+  const trace = $("devTrace");
+  if (!trace) return;
+  if (!s || !s.lastTrace) {
+    trace.textContent = "暂无请求";
+  } else {
+    trace.innerHTML = Object.entries(s.lastTrace).map(([k, v]) => `<div class="trace-row"><div class="trace-key">${k}</div><div class="trace-value">${v}</div></div>`).join("");
+  }
+  drawChart("scoreCanvas", s?.metrics || [], "score");
+  drawChart("riskCanvas", s?.metrics || [], "riskValue");
+}
+
+function drawChart(canvasId, points, key) {
+  const canvas = $(canvasId);
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  const w = canvas.width;
+  const h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = "#fffaf7";
+  ctx.fillRect(0, 0, w, h);
+  ctx.strokeStyle = "#eadfd2";
+  ctx.lineWidth = 1;
+  for (let i = 1; i <= 3; i++) {
+    const y = (h / 4) * i;
+    ctx.beginPath(); ctx.moveTo(10, y); ctx.lineTo(w - 10, y); ctx.stroke();
+  }
+  if (!points.length) {
+    ctx.fillStyle = "#7b7167";
+    ctx.font = "13px sans-serif";
+    ctx.fillText("暂无数据", 20, 80);
+    return;
+  }
+  const values = points.map((p) => Number(p[key] || 0));
+  const max = key === "riskValue" ? 3 : Math.max(30, ...values);
+  const min = 0;
+  const xStep = points.length > 1 ? (w - 40) / (points.length - 1) : 0;
+  ctx.strokeStyle = "#8c5f3f";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  values.forEach((v, i) => {
+    const x = 20 + i * xStep;
+    const y = h - 20 - ((v - min) / (max - min || 1)) * (h - 40);
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+  ctx.fillStyle = "#8c5f3f";
+  values.forEach((v, i) => {
+    const x = 20 + i * xStep;
+    const y = h - 20 - ((v - min) / (max - min || 1)) * (h - 40);
+    ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill();
+  });
+}
+
 async function sendMessage() {
   const input = $("textInput");
   const text = input.value.trim();
@@ -154,6 +271,7 @@ async function sendMessage() {
     const session = await ensureSession(text || "语音对话");
     const audioPath = await uploadAudio(session.session_id);
     addMessage(session, "user", text || "[语音输入]", audioPath ? "已附带语音" : "");
+    showTyping();
 
     input.value = "";
     audioBlob = null;
@@ -173,8 +291,11 @@ async function sendMessage() {
     });
     if (!resp.ok) throw new Error(await resp.text());
     const data = await resp.json();
-    addMessage(session, "agent", data.reply, `level: ${data.risk_level} | score: ${Number(data.score).toFixed(1)}`);
+    hideTyping();
+    addMetric(session, data, audioPath);
+    addMessage(session, "agent", data.reply);
   } catch (err) {
+    hideTyping();
     const session = current();
     if (session) addMessage(session, "system", "请求失败：" + (err.message || err));
     else alert(err.message || err);
@@ -257,6 +378,12 @@ $("deleteSessionBtn").onclick = () => {
   activeId = sessions[0]?.session_id || null;
   save();
   render();
+};
+
+$("toggleDevBtn").onclick = () => {
+  const next = localStorage.getItem(DEV_KEY) === "1" ? "0" : "1";
+  localStorage.setItem(DEV_KEY, next);
+  renderDevPanel();
 };
 
 $("recordBtn").onclick = toggleRecording;
