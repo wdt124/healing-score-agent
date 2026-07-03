@@ -23,3 +23,9 @@ def web_styles():
 @router.get("/ui/app.js")
 def web_script():
     return FileResponse("app/web/app.js")
+
+
+@router.post("/ui/send")
+async def web_send(user_text: str = Form(default=""), session_id: str = Form(default=""), audio_file: UploadFile | None = File(default=None)):
+    result = run_pipeline(user_text, session_id=session_id or None)
+    return result
