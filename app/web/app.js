@@ -5,6 +5,10 @@ let sessions = JSON.parse(localStorage.getItem(KEY) || "[]");
 let activeId = sessions[0]?.session_id || null;
 let audioBlob = null;
 let audioName = "";
+let recorder = null;
+let recordChunks = [];
+let recordStartedAt = 0;
+let micStream = null;
 
 const fileInput = document.createElement("input");
 fileInput.type = "file";
@@ -88,7 +92,7 @@ function renderMessages() {
   const s = current();
   box.innerHTML = "";
   if (!s || !s.messages.length) {
-    box.innerHTML = '<div class="empty-state"><div class="empty-icon">💬</div><h3>开始一次新的对话</h3><p>可以只输入文本，也可以先选择语音、试听后，再补充文本并发送。</p></div>';
+    box.innerHTML = '<div class="empty-state"><div class="empty-icon">💬</div><h3>开始一次新的对话</h3><p>可以只输入文本，也可以先录音、试听后，再补充文本并发送。</p></div>';
     return;
   }
   for (const m of s.messages) {
@@ -130,7 +134,7 @@ async function uploadAudio(sessionId) {
   if (!audioBlob) return null;
   const form = new FormData();
   form.append("session_id", sessionId);
-  form.append("file", audioBlob, audioName || "audio.wav");
+  form.append("file", audioBlob, audioName || "audio.webm");
   const resp = await fetch("/audio/upload", { method: "POST", body: form });
   if (!resp.ok) throw new Error(await resp.text());
   return (await resp.json()).audio_path;
@@ -140,11 +144,12 @@ async function sendMessage() {
   const input = $("textInput");
   const text = input.value.trim();
   if (!text && !audioBlob) {
-    alert("请输入文本，或先选择一段语音。");
+    alert("请输入文本，或先录制/选择一段语音。");
     return;
   }
 
   $("sendBtn").disabled = true;
+  $("recordBtn").disabled = true;
   try {
     const session = await ensureSession(text || "语音对话");
     const audioPath = await uploadAudio(session.session_id);
@@ -175,6 +180,66 @@ async function sendMessage() {
     else alert(err.message || err);
   } finally {
     $("sendBtn").disabled = false;
+    $("recordBtn").disabled = false;
+  }
+}
+
+function preferredMimeType() {
+  const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/ogg"];
+  return candidates.find((type) => window.MediaRecorder && MediaRecorder.isTypeSupported(type)) || "";
+}
+
+async function startRecording() {
+  if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+    alert("当前浏览器不支持麦克风录音，将改为选择语音文件。建议使用新版 Chrome 或 Edge。 ");
+    fileInput.click();
+    return;
+  }
+
+  micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  recordChunks = [];
+  const mimeType = preferredMimeType();
+  recorder = mimeType ? new MediaRecorder(micStream, { mimeType }) : new MediaRecorder(micStream);
+  recordStartedAt = Date.now();
+
+  recorder.ondataavailable = (event) => {
+    if (event.data && event.data.size > 0) recordChunks.push(event.data);
+  };
+
+  recorder.onstop = () => {
+    if (micStream) {
+      micStream.getTracks().forEach((track) => track.stop());
+      micStream = null;
+    }
+    const type = recorder.mimeType || "audio/webm";
+    audioBlob = new Blob(recordChunks, { type });
+    const suffix = type.includes("ogg") ? "ogg" : "webm";
+    const seconds = Math.max(1, Math.round((Date.now() - recordStartedAt) / 1000));
+    audioName = `recording-${Date.now()}.${suffix}`;
+    $("recordBtn").classList.remove("recording");
+    $("recordBtn").textContent = "🎙 录音";
+    $("audioStatus").textContent = `已暂存语音 ${seconds}s`;
+    renderAudio();
+  };
+
+  recorder.start();
+  $("recordBtn").classList.add("recording");
+  $("recordBtn").textContent = "■ 停止";
+}
+
+function stopRecording() {
+  if (recorder && recorder.state === "recording") recorder.stop();
+}
+
+async function toggleRecording() {
+  try {
+    if (recorder && recorder.state === "recording") stopRecording();
+    else await startRecording();
+  } catch (err) {
+    alert("无法启动麦克风：" + (err.message || err));
+    if (micStream) micStream.getTracks().forEach((track) => track.stop());
+    $("recordBtn").classList.remove("recording");
+    $("recordBtn").textContent = "🎙 录音";
   }
 }
 
@@ -194,7 +259,7 @@ $("deleteSessionBtn").onclick = () => {
   render();
 };
 
-$("recordBtn").onclick = () => fileInput.click();
+$("recordBtn").onclick = toggleRecording;
 fileInput.onchange = () => {
   const file = fileInput.files[0];
   if (!file) return;
