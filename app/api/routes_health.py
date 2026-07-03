@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Form, UploadFile, File
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse
 from app.services.pipeline_service import run_pipeline
 
 router = APIRouter()
@@ -18,6 +18,11 @@ def web_app():
 @router.get("/ui/styles.css")
 def web_styles():
     return FileResponse("app/web/styles.css")
+
+
+@router.get("/ui/dev.css")
+def web_dev_styles():
+    return FileResponse("app/web/dev.css")
 
 
 @router.get("/ui/app.js")
