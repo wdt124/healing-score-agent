@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Healing Score Agent</title>
+  <link rel="stylesheet" href="/health/ui/styles.css" />
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">H</div>
+        <div>
+          <h1>Healing Agent</h1>
+          <p>用户端对话界面</p>
+        </div>
+      </div>
+      <button id="newSessionBtn" class="primary wide">+ 新建对话</button>
+      <div class="side-title">历史会话</div>
+      <div id="sessionList" class="session-list"></div>
+    </aside>
+
+    <main class="chat-panel">
+      <header class="chat-header">
+        <div>
+          <h2 id="chatTitle">新建对话</h2>
+          <p id="chatSubtitle">输入第一句话后会自动生成会话标题和 session_id</p>
+        </div>
+        <button id="deleteSessionBtn" class="ghost">删除当前对话</button>
+      </header>
+
+      <section id="messages" class="messages">
+        <div class="empty-state">
+          <div class="empty-icon">💬</div>
+          <h3>开始一次新的对话</h3>
+          <p>可以只输入文本，也可以先录音、试听后，再补充文本并发送。</p>
+        </div>
+      </section>
+
+      <section id="audioDraft" class="audio-draft hidden">
+        <div>
+          <strong id="audioStatus">已暂存语音</strong>
+          <span id="audioMeta"></span>
+        </div>
+        <audio id="audioPreview" controls></audio>
+        <button id="clearAudioBtn" class="ghost danger">删除语音</button>
+      </section>
+
+      <footer class="composer">
+        <textarea id="textInput" rows="2" placeholder="输入你想说的话……"></textarea>
+        <div class="composer-actions">
+          <button id="recordBtn" class="ghost mic">🎙 录音</button>
+          <button id="sendBtn" class="primary">发送</button>
+        </div>
+      </footer>
+    </main>
+  </div>
+
+  <script src="/health/ui/app.js"></script>
+</body>
+</html>
