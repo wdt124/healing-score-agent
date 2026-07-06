@@ -82,6 +82,25 @@
     </aside>
   </div>
 
+  <div id="profileModal" class="hidden" style="position:fixed;inset:0;background:rgba(42,37,32,.38);display:grid;place-items:center;z-index:50;padding:22px;">
+    <section style="width:min(680px,100%);max-height:92vh;overflow:auto;background:#fffaf3;border:1px solid #eadfd2;border-radius:22px;box-shadow:0 20px 70px rgba(42,37,32,.28);padding:22px;">
+      <h2 style="margin:0 0 8px;">Agent 初始化设定</h2>
+      <p style="margin:0 0 16px;color:#7b7167;">强烈建议填写。该设置会影响本轮对话的人设、称呼与语气，但不会覆盖心理支持安全策略。</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <label>希望的 Agent 名称<input id="profileAgentName" maxlength="40" style="width:100%;margin-top:6px;border:1px solid #eadfd2;border-radius:12px;padding:10px 12px;" /></label>
+        <label>希望对你的称呼<input id="profileUserName" maxlength="40" style="width:100%;margin-top:6px;border:1px solid #eadfd2;border-radius:12px;padding:10px 12px;" /></label>
+        <label>语气风格<select id="profileTone" style="width:100%;margin-top:6px;border:1px solid #eadfd2;border-radius:12px;padding:10px 12px;"><option value="温柔">温柔</option><option value="冷静">冷静</option><option value="俏皮">俏皮</option><option value="真诚直接">真诚直接</option><option value="稳定陪伴">稳定陪伴</option></select></label>
+        <label>人设定位<input id="profileRole" maxlength="80" placeholder="例如：朋友、倾听者、陪伴型助手" style="width:100%;margin-top:6px;border:1px solid #eadfd2;border-radius:12px;padding:10px 12px;" /></label>
+        <label style="grid-column:1/-1;">自定义设置<textarea id="profileCustom" maxlength="500" placeholder="可写任何偏好，500 字以内。与安全策略冲突的部分会被忽略。" style="width:100%;min-height:110px;margin-top:6px;border:1px solid #eadfd2;border-radius:12px;padding:10px 12px;resize:vertical;"></textarea></label>
+      </div>
+      <div style="font-size:12px;color:#7b7167;background:#fff;border:1px dashed #eadfd2;border-radius:12px;padding:10px;margin-top:12px;">提示：这一步可以跳过，但填写后会真正传入后端生成链路，用于调整回复风格。自定义设置不能要求系统忽略安全规则、医学边界或现实求助建议。</div>
+      <div style="display:flex;justify-content:space-between;gap:10px;margin-top:16px;">
+        <button id="skipProfileBtn" class="ghost">跳过</button>
+        <button id="saveProfileBtn" class="primary">保存并开始</button>
+      </div>
+    </section>
+  </div>
+
   <script src="/health/ui/app.js"></script>
 </body>
 </html>
