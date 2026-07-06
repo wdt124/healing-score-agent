@@ -25,6 +25,11 @@ def web_dev_styles():
     return FileResponse("app/web/dev.css")
 
 
+@router.get("/ui/profile_manager.js")
+def web_profile_script():
+    return FileResponse("app/web/profile_manager.js")
+
+
 @router.get("/ui/app.js")
 def web_script():
     return FileResponse("app/web/app.js")
