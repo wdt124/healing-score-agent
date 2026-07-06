@@ -1,8 +1,3 @@
-"""评分服务
-
-scoring_step — 管道第一步：调用 UnifiedDepressionEngine 产出 SDS 分数。
-"""
-
 import logging
 import os
 from typing import Optional
@@ -33,14 +28,17 @@ def _get_engine() -> UnifiedDepressionEngine:
 def score_text_and_audio(text: str, audio_path: Optional[str] = None) -> dict:
     result = _get_engine().predict(text=text, audio_path=audio_path)
     logger.info("instance_score: %s", result["predicted_sds_score"])
-
     return result
 
-scoring_step = RunnableLambda(lambda inputs: {
-    "user_text": inputs["user_text"],
-    "session_id": inputs["session_id"],
-    "score_result": score_text_and_audio(
-        text=inputs["user_text"],
-        audio_path=inputs.get("audio_path"),
-    ),
-})
+
+def _score_step_fn(inputs: dict) -> dict:
+    return {
+        **inputs,
+        "score_result": score_text_and_audio(
+            text=inputs["user_text"],
+            audio_path=inputs.get("audio_path"),
+        ),
+    }
+
+
+scoring_step = RunnableLambda(_score_step_fn)
