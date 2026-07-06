@@ -100,6 +100,61 @@ showProfileModal = function () {
   originalShowProfileModal();
 };
 
+riskToValue = function (level) {
+  const key = String(level || "").toLowerCase();
+  if (key === "critical") return 4;
+  if (key === "high") return 3;
+  if (key === "medium") return 2;
+  if (key === "low") return 1;
+  return 0;
+};
+
+drawChart = function (canvasId, points, key) {
+  const canvas = $(canvasId);
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  const w = canvas.width;
+  const h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = "#fffaf7";
+  ctx.fillRect(0, 0, w, h);
+  ctx.strokeStyle = "#eadfd2";
+  ctx.lineWidth = 1;
+  for (let i = 1; i <= 4; i++) {
+    const y = (h / 5) * i;
+    ctx.beginPath();
+    ctx.moveTo(10, y);
+    ctx.lineTo(w - 10, y);
+    ctx.stroke();
+  }
+  if (!points.length) {
+    ctx.fillStyle = "#7b7167";
+    ctx.font = "13px sans-serif";
+    ctx.fillText("暂无数据", 20, 80);
+    return;
+  }
+  const values = points.map((p) => Number(p[key] || 0));
+  const max = key === "riskValue" ? 4 : Math.max(30, ...values);
+  const xStep = points.length > 1 ? (w - 40) / (points.length - 1) : 0;
+  ctx.strokeStyle = "#8c5f3f";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  values.forEach((v, i) => {
+    const x = 20 + i * xStep;
+    const y = h - 20 - (v / (max || 1)) * (h - 40);
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+  ctx.fillStyle = "#8c5f3f";
+  values.forEach((v, i) => {
+    const x = 20 + i * xStep;
+    const y = h - 20 - (v / (max || 1)) * (h - 40);
+    ctx.beginPath();
+    ctx.arc(x, y, 3, 0, Math.PI * 2);
+    ctx.fill();
+  });
+};
+
 $("saveProfileBtn").onclick = () => {
   const profile = getProfileFromForm();
   rememberProfile(profile);
