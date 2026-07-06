@@ -2,10 +2,19 @@ from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 
 
+class AgentProfile(BaseModel):
+    agent_name: Optional[str] = Field(default=None, max_length=40)
+    user_name: Optional[str] = Field(default=None, max_length=40)
+    tone_style: Optional[str] = Field(default=None, max_length=40)
+    persona_role: Optional[str] = Field(default=None, max_length=80)
+    custom_settings: Optional[str] = Field(default=None, max_length=500)
+
+
 class ChatRequest(BaseModel):
     user_text: str = Field(..., min_length=1, max_length=2000)
     session_id: Optional[str] = None
     audio_path: Optional[str] = None
+    agent_profile: Optional[AgentProfile] = None
 
 
 class RiskSignalBrief(BaseModel):
