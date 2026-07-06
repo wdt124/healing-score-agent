@@ -9,6 +9,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from app.core.llm_client import LLMClientManager
 from app.prompt.knowledge_loader import KnowledgeBase
 from app.services.memory_service import _conversation_memory
+from app.services.persona_service import build_persona_instruction
 
 _kb: KnowledgeBase | None = None
 
@@ -79,18 +80,16 @@ def generate_supportive_reply(
     llm_diagnostic_context: list[str],
     conversation_history: str = "",
     safety_decision=None,
+    persona_instruction: str = "",
 ) -> str:
-    """根据安全策略生成支持性回复。
-
-    Args:
-        safety_decision: SafetyDecision 对象（必须），由 policy_engine 产出。
-                        其 response_constraints / forbidden_actions / required_actions
-                        直接注入 System Prompt；reference_modules 决定注入哪些知识库。
-    """
+    """根据安全策略生成支持性回复。"""
     if safety_decision is None:
         raise ValueError("safety_decision is required for generating supportive reply")
 
     extra_instruction = safety_decision.response_constraints
+
+    if persona_instruction:
+        extra_instruction += "\n\n[Agent 初始化设定]\n" + persona_instruction
 
     # 将 forbid/require 注入 extra_instruction
     if safety_decision.forbidden_actions:
@@ -98,13 +97,11 @@ def generate_supportive_reply(
     if safety_decision.required_actions:
         extra_instruction += " 必须行为: " + "; ".join(safety_decision.required_actions) + "。"
 
-    # 知识库参考模块由 policy_engine 统一管理
     refs = safety_decision.reference_modules
 
     kb = _get_kb()
     prompt_knowledge = kb.generate_prompt(include_refs=refs)
 
-    # 将历史对话拼接到当前用户消息之前
     if conversation_history:
         prompt = f"{conversation_history}\n\n[当前用户消息]\n{user_text}"
     else:
@@ -128,6 +125,7 @@ def _reply_with_memory(inputs: dict) -> dict:
 
     safety_decision = inputs.get("safety_decision")
     risk_assessment = inputs.get("risk_assessment")
+    persona_instruction, safe_profile, profile_warnings = build_persona_instruction(inputs.get("agent_profile"))
 
     reply = generate_supportive_reply(
         user_text=inputs["user_text"],
@@ -136,6 +134,7 @@ def _reply_with_memory(inputs: dict) -> dict:
         llm_diagnostic_context=llm_diagnostic_context,
         conversation_history=history,
         safety_decision=safety_decision,
+        persona_instruction=persona_instruction,
     )
 
     _conversation_memory.add_turn(session_id, inputs["user_text"], reply)
@@ -147,6 +146,8 @@ def _reply_with_memory(inputs: dict) -> dict:
         "risk_level": inputs["risk_level"],
         "risk_assessment": risk_assessment,
         "safety_decision": safety_decision,
+        "agent_profile": safe_profile,
+        "agent_profile_warnings": profile_warnings,
     }
 
 
