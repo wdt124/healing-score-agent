@@ -10,6 +10,8 @@ let recorder = null;
 let recordChunks = [];
 let recordStartedAt = 0;
 let micStream = null;
+let pendingProfile = null;
+let profileSetupDone = Boolean(activeId);
 
 const fileInput = document.createElement("input");
 fileInput.type = "file";
@@ -45,12 +47,51 @@ async function ensureSession(text) {
     messages: [],
     metrics: [],
     lastTrace: null,
+    agentProfile: pendingProfile || null,
+    profileSkipped: !pendingProfile,
   };
   sessions.unshift(session);
   activeId = session.session_id;
+  pendingProfile = null;
+  profileSetupDone = true;
   save();
   render();
   return session;
+}
+
+function getProfileFromForm() {
+  return {
+    agent_name: $("profileAgentName").value.trim().slice(0, 40),
+    user_name: $("profileUserName").value.trim().slice(0, 40),
+    tone_style: $("profileTone").value.trim().slice(0, 40),
+    persona_role: $("profileRole").value.trim().slice(0, 80),
+    custom_settings: $("profileCustom").value.trim().slice(0, 500),
+  };
+}
+
+function showProfileModal() {
+  const modal = $("profileModal");
+  if (!modal) return;
+  modal.classList.remove("hidden");
+  $("profileCustom").value = "";
+  $("profileAgentName").focus();
+}
+
+function hideProfileModal() {
+  const modal = $("profileModal");
+  if (modal) modal.classList.add("hidden");
+}
+
+function saveProfileFromModal() {
+  pendingProfile = getProfileFromForm();
+  profileSetupDone = true;
+  hideProfileModal();
+}
+
+function skipProfileSetup() {
+  pendingProfile = null;
+  profileSetupDone = true;
+  hideProfileModal();
 }
 
 function render() {
@@ -78,6 +119,8 @@ function renderList() {
       activeId = s.session_id;
       audioBlob = null;
       audioName = "";
+      profileSetupDone = true;
+      pendingProfile = null;
       render();
     };
     box.appendChild(btn);
@@ -96,7 +139,7 @@ function renderMessages() {
   const s = current();
   box.innerHTML = "";
   if (!s || !s.messages.length) {
-    box.innerHTML = '<div class="empty-state"><div class="empty-icon">💬</div><h3>开始一次新的对话</h3><p>可以只输入文本，也可以先录音、试听后，再补充文本并发送。</p></div>';
+    box.innerHTML = '<div class="empty-state"><div class="empty-icon">💬</div><h3>开始一次新的对话</h3><p>可以先完成 Agent 初始化设定，也可以跳过后直接开始。</p></div>';
     return;
   }
   for (const m of s.messages) {
@@ -167,16 +210,29 @@ function riskToValue(level) {
   return 0;
 }
 
-function buildTrace(data, audioPath) {
+function describeProfile(profile) {
+  if (!profile) return "未设置或已跳过";
+  const parts = [];
+  if (profile.agent_name) parts.push(`名称=${profile.agent_name}`);
+  if (profile.user_name) parts.push(`称呼=${profile.user_name}`);
+  if (profile.tone_style) parts.push(`语气=${profile.tone_style}`);
+  if (profile.persona_role) parts.push(`定位=${profile.persona_role}`);
+  if (profile.custom_settings) parts.push(`自定义=${profile.custom_settings}`);
+  return parts.join("；") || "未设置或已跳过";
+}
+
+function buildTrace(data, audioPath, profile) {
   return {
     provider: data.model_provider || "-",
     model: data.model_name || "-",
     input: audioPath ? "文本 + 语音" : "文本",
+    profile: describeProfile(profile),
+    profileSafety: "人设设定仅影响称呼、语气和陪伴风格；不能覆盖心理支持安全策略。",
     scoring: audioPath ? "scoring_step：V2 多模态评分（文本语义 + 音频特征）" : "scoring_step：V1 文本评分",
     memory: "memory_step：会话历史 + EMA 平滑",
     risk: "risk_assessment_step：规则信号 + 趋势信号 + 综合等级",
     safety: `safety_policy_step：${data.safety_mode || "默认安全策略"}`,
-    reply: "reply_step：带安全约束的 LLM 回复",
+    reply: "reply_step：带安全约束和人设偏好的 LLM 回复",
     note: "展示的是可观测执行链路，不展示模型私有推理。",
   };
 }
@@ -192,7 +248,7 @@ function addMetric(session, data, audioPath) {
     provider: data.model_provider || "-",
     audio: Boolean(audioPath),
   });
-  session.lastTrace = buildTrace(data, audioPath);
+  session.lastTrace = buildTrace(data, audioPath, session.agentProfile);
   save();
 }
 
@@ -207,7 +263,7 @@ function renderDevPanel() {
   const trace = $("devTrace");
   if (!trace) return;
   if (!s || !s.lastTrace) {
-    trace.textContent = "暂无请求";
+    trace.textContent = s?.agentProfile ? `已设置人设：${describeProfile(s.agentProfile)}` : "暂无请求";
   } else {
     trace.innerHTML = Object.entries(s.lastTrace).map(([k, v]) => `<div class="trace-row"><div class="trace-key">${k}</div><div class="trace-value">${v}</div></div>`).join("");
   }
@@ -260,6 +316,10 @@ function drawChart(canvasId, points, key) {
 async function sendMessage() {
   const input = $("textInput");
   const text = input.value.trim();
+  if (!current() && !profileSetupDone) {
+    showProfileModal();
+    return;
+  }
   if (!text && !audioBlob) {
     alert("请输入文本，或先录制/选择一段语音。");
     return;
@@ -281,6 +341,7 @@ async function sendMessage() {
     const payload = {
       user_text: text || "请根据我的语音内容进行回应。",
       session_id: session.session_id,
+      agent_profile: session.agentProfile || undefined,
     };
     if (audioPath) payload.audio_path = audioPath;
 
@@ -368,14 +429,17 @@ $("newSessionBtn").onclick = () => {
   activeId = null;
   audioBlob = null;
   audioName = "";
+  pendingProfile = null;
+  profileSetupDone = false;
   render();
-  $("textInput").focus();
+  showProfileModal();
 };
 
 $("deleteSessionBtn").onclick = () => {
   if (!activeId || !confirm("删除当前对话？这只会删除浏览器本地记录。")) return;
   sessions = sessions.filter((s) => s.session_id !== activeId);
   activeId = sessions[0]?.session_id || null;
+  profileSetupDone = Boolean(activeId);
   save();
   render();
 };
@@ -386,6 +450,8 @@ $("toggleDevBtn").onclick = () => {
   renderDevPanel();
 };
 
+$("saveProfileBtn").onclick = saveProfileFromModal;
+$("skipProfileBtn").onclick = skipProfileSetup;
 $("recordBtn").onclick = toggleRecording;
 fileInput.onchange = () => {
   const file = fileInput.files[0];
@@ -411,3 +477,4 @@ $("textInput").addEventListener("keydown", (event) => {
 });
 
 render();
+if (!current()) setTimeout(showProfileModal, 150);
