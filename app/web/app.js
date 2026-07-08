@@ -12,6 +12,7 @@ let recordStartedAt = 0;
 let micStream = null;
 let pendingProfile = null;
 let profileSetupDone = Boolean(activeId);
+let quoteDraft = null;
 
 const fileInput = document.createElement("input");
 fileInput.type = "file";
@@ -99,6 +100,7 @@ function render() {
   renderHeader();
   renderMessages();
   renderAudio();
+  renderQuoteDraft();
   renderDevPanel();
 }
 
@@ -119,6 +121,7 @@ function renderList() {
       activeId = s.session_id;
       audioBlob = null;
       audioName = "";
+      quoteDraft = null;
       profileSetupDone = true;
       pendingProfile = null;
       render();
@@ -134,6 +137,50 @@ function renderHeader() {
   $("deleteSessionBtn").disabled = !s;
 }
 
+function roleLabel(role) {
+  if (role === "user") return "用户";
+  if (role === "agent") return "Agent";
+  if (role === "system") return "系统";
+  return role || "消息";
+}
+
+function clipText(text, max = 280) {
+  const clean = String(text || "").trim();
+  return clean.length > max ? clean.slice(0, max) + "..." : clean;
+}
+
+function getSelectedTextInside(node) {
+  const selection = window.getSelection?.();
+  if (!selection || selection.isCollapsed) return "";
+  const text = selection.toString().trim();
+  if (!text) return "";
+  const anchor = selection.anchorNode;
+  const focus = selection.focusNode;
+  if ((anchor && node.contains(anchor)) || (focus && node.contains(focus))) return clipText(text, 500);
+  return "";
+}
+
+function setQuoteDraft(role, text) {
+  const clean = clipText(text, 500);
+  if (!clean) return;
+  quoteDraft = { role, text: clean, time: new Date().toISOString() };
+  renderQuoteDraft();
+  const input = $("textInput");
+  if (input) input.focus();
+}
+
+function renderQuoteDraft() {
+  const box = $("quoteDraft");
+  if (!box) return;
+  if (!quoteDraft) {
+    box.classList.add("hidden");
+    $("quoteDraftText").textContent = "";
+    return;
+  }
+  box.classList.remove("hidden");
+  $("quoteDraftText").textContent = `${roleLabel(quoteDraft.role)}：${quoteDraft.text}`;
+}
+
 function renderMessages() {
   const box = $("messages");
   const s = current();
@@ -142,18 +189,53 @@ function renderMessages() {
     box.innerHTML = '<div class="empty-state"><div class="empty-icon">💬</div><h3>开始一次新的对话</h3><p>可以先完成 Agent 初始化设定，也可以跳过后直接开始。</p></div>';
     return;
   }
-  for (const m of s.messages) {
+  s.messages.forEach((m, index) => {
     const div = document.createElement("div");
     div.className = "message " + m.role;
-    div.textContent = m.text;
+    div.dataset.index = String(index);
+
+    if (m.quote) {
+      const quote = document.createElement("div");
+      quote.className = "quoted-block";
+      const qr = document.createElement("div");
+      qr.className = "quoted-role";
+      qr.textContent = "引用 " + roleLabel(m.quote.role);
+      const qt = document.createElement("div");
+      qt.textContent = m.quote.text;
+      quote.appendChild(qr);
+      quote.appendChild(qt);
+      div.appendChild(quote);
+    }
+
+    const body = document.createElement("div");
+    body.className = "message-body";
+    body.textContent = m.text;
+    div.appendChild(body);
+
     if (m.meta) {
       const meta = document.createElement("div");
       meta.className = "meta-line";
       meta.textContent = m.meta;
       div.appendChild(meta);
     }
+
+    if (m.role !== "system") {
+      const quoteBtn = document.createElement("button");
+      quoteBtn.className = "quote-btn";
+      quoteBtn.type = "button";
+      quoteBtn.textContent = "引用";
+      quoteBtn.title = "引用整条消息；先选中文本再点则只引用选中文本";
+      quoteBtn.onclick = (event) => {
+        event.stopPropagation();
+        const selected = getSelectedTextInside(div);
+        setQuoteDraft(m.role, selected || m.text);
+      };
+      div.appendChild(quoteBtn);
+      div.ondblclick = () => setQuoteDraft(m.role, m.text);
+    }
+
     box.appendChild(div);
-  }
+  });
   box.scrollTop = box.scrollHeight;
 }
 
@@ -186,8 +268,8 @@ function renderAudio() {
   $("audioMeta").textContent = `${audioName || "audio"}，${Math.round(audioBlob.size / 1024)} KB`;
 }
 
-function addMessage(session, role, text, meta = "") {
-  session.messages.push({ role, text, meta, time: new Date().toISOString() });
+function addMessage(session, role, text, meta = "", quote = null) {
+  session.messages.push({ role, text, meta, quote, time: new Date().toISOString() });
   save();
   render();
 }
@@ -204,6 +286,7 @@ async function uploadAudio(sessionId) {
 
 function riskToValue(level) {
   const key = String(level || "").toLowerCase();
+  if (key === "critical") return 4;
   if (key === "high") return 3;
   if (key === "medium") return 2;
   if (key === "low") return 1;
@@ -239,17 +322,46 @@ function buildTrace(data, audioPath, profile) {
 
 function addMetric(session, data, audioPath) {
   if (!session.metrics) session.metrics = [];
-  session.metrics.push({
+  const metric = {
     t: new Date().toLocaleTimeString(),
     score: Number(data.score || 0),
     riskLevel: data.risk_level || "unknown",
     riskValue: riskToValue(data.risk_level),
+    safetyMode: data.safety_mode || "-",
     model: data.model_name || "-",
     provider: data.model_provider || "-",
     audio: Boolean(audioPath),
-  });
+  };
+  session.metrics.push(metric);
+  session.currentMetric = metric;
   session.lastTrace = buildTrace(data, audioPath, session.agentProfile);
   save();
+}
+
+function renderDevCurrent(session) {
+  const box = $("devCurrent");
+  if (!box) return;
+  const metric = session?.currentMetric || session?.metrics?.[session.metrics.length - 1];
+  if (!metric) {
+    box.textContent = "暂无请求";
+    return;
+  }
+  const score = Number.isFinite(metric.score) ? metric.score.toFixed(1) : "-";
+  box.innerHTML = `
+    <div class="metric-grid">
+      <div class="metric-card">
+        <div class="metric-label">本轮评分</div>
+        <div class="metric-value">${score}</div>
+        <div class="metric-sub">score / persistent_score</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">风险等级</div>
+        <div class="metric-value">${metric.riskLevel || "-"}</div>
+        <div class="metric-sub">mode: ${metric.safetyMode || "-"}</div>
+      </div>
+    </div>
+    <div class="metric-sub" style="margin-top:8px;">${metric.provider || "-"} / ${metric.model || "-"} / ${metric.audio ? "文本+语音" : "文本"} / ${metric.t}</div>
+  `;
 }
 
 function renderDevPanel() {
@@ -260,6 +372,7 @@ function renderDevPanel() {
   if (btn) btn.textContent = enabled ? "关闭开发者模式" : "开发者模式";
 
   const s = current();
+  renderDevCurrent(s);
   const trace = $("devTrace");
   if (!trace) return;
   if (!s || !s.lastTrace) {
@@ -282,8 +395,8 @@ function drawChart(canvasId, points, key) {
   ctx.fillRect(0, 0, w, h);
   ctx.strokeStyle = "#eadfd2";
   ctx.lineWidth = 1;
-  for (let i = 1; i <= 3; i++) {
-    const y = (h / 4) * i;
+  for (let i = 1; i <= 4; i++) {
+    const y = (h / 5) * i;
     ctx.beginPath(); ctx.moveTo(10, y); ctx.lineTo(w - 10, y); ctx.stroke();
   }
   if (!points.length) {
@@ -293,7 +406,7 @@ function drawChart(canvasId, points, key) {
     return;
   }
   const values = points.map((p) => Number(p[key] || 0));
-  const max = key === "riskValue" ? 3 : Math.max(30, ...values);
+  const max = key === "riskValue" ? 4 : Math.max(30, ...values);
   const min = 0;
   const xStep = points.length > 1 ? (w - 40) / (points.length - 1) : 0;
   ctx.strokeStyle = "#8c5f3f";
@@ -313,6 +426,13 @@ function drawChart(canvasId, points, key) {
   });
 }
 
+function buildOutboundText(text, quote) {
+  if (!quote) return text || "请根据我的语音内容进行回应。";
+  const quoted = `[引用${roleLabel(quote.role)}]\n${quote.text}`;
+  const reply = text || "请根据引用内容和我的语音内容进行回应。";
+  return `${quoted}\n\n[用户当前输入]\n${reply}`;
+}
+
 async function sendMessage() {
   const input = $("textInput");
   const text = input.value.trim();
@@ -328,18 +448,21 @@ async function sendMessage() {
   $("sendBtn").disabled = true;
   $("recordBtn").disabled = true;
   try {
+    const quoteToSend = quoteDraft ? { ...quoteDraft } : null;
     const session = await ensureSession(text || "语音对话");
     const audioPath = await uploadAudio(session.session_id);
-    addMessage(session, "user", text || "[语音输入]", audioPath ? "已附带语音" : "");
+    addMessage(session, "user", text || "[语音输入]", audioPath ? "已附带语音" : "", quoteToSend);
     showTyping();
 
     input.value = "";
     audioBlob = null;
     audioName = "";
+    quoteDraft = null;
     renderAudio();
+    renderQuoteDraft();
 
     const payload = {
-      user_text: text || "请根据我的语音内容进行回应。",
+      user_text: buildOutboundText(text, quoteToSend),
       session_id: session.session_id,
       agent_profile: session.agentProfile || undefined,
     };
@@ -429,6 +552,7 @@ $("newSessionBtn").onclick = () => {
   activeId = null;
   audioBlob = null;
   audioName = "";
+  quoteDraft = null;
   pendingProfile = null;
   profileSetupDone = false;
   render();
@@ -439,6 +563,7 @@ $("deleteSessionBtn").onclick = () => {
   if (!activeId || !confirm("删除当前对话？这只会删除浏览器本地记录。")) return;
   sessions = sessions.filter((s) => s.session_id !== activeId);
   activeId = sessions[0]?.session_id || null;
+  quoteDraft = null;
   profileSetupDone = Boolean(activeId);
   save();
   render();
@@ -466,6 +591,11 @@ $("clearAudioBtn").onclick = () => {
   audioBlob = null;
   audioName = "";
   renderAudio();
+};
+
+$("clearQuoteBtn").onclick = () => {
+  quoteDraft = null;
+  renderQuoteDraft();
 };
 
 $("sendBtn").onclick = sendMessage;
