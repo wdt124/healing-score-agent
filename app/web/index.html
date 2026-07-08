@@ -51,6 +51,14 @@
         <button id="clearAudioBtn" class="ghost danger">删除语音</button>
       </section>
 
+      <section id="quoteDraft" class="quote-draft hidden">
+        <div>
+          <strong>引用</strong>
+          <p id="quoteDraftText"></p>
+        </div>
+        <button id="clearQuoteBtn" class="ghost danger">取消引用</button>
+      </section>
+
       <footer class="composer">
         <textarea id="textInput" rows="2" placeholder="输入你想说的话……"></textarea>
         <div class="composer-actions">
@@ -66,6 +74,10 @@
           <h2>开发者模式</h2>
           <p>执行链路、评分曲线与风险曲线</p>
         </div>
+      </div>
+      <div class="dev-section">
+        <h3>本轮评分与风险</h3>
+        <div id="devCurrent" class="dev-current">暂无请求</div>
       </div>
       <div class="dev-section">
         <h3>本轮执行链路</h3>
