@@ -1,10 +1,13 @@
 """风险规则定义
 
 按四个优先级组织：
-  direct_high_risk: 高危直接信号（计划/手段/时间/准备行为，优先于 SDS 分数）
-  medium_auxiliary: 中风险辅助信号（绝望/负担/孤立等，抬升风险等级）
-  protective: 保护因素（不能抵消直接危机，但可降低紧迫性）
-  false_positive_context: 降低误报的上下文规则（否定/转述/假设/过去已解决）
+  direct_high_risk: 高危直接信号（明确意念、方法、准备行为等）
+  medium_auxiliary: 中风险辅助信号（绝望/负担/孤立等）
+  protective: 保护因素
+  false_positive_context: 否定/转述/假设/过去已解决等上下文
+
+原则：避免用“今晚”“准备了”“吃药”“刀”“绳子”等普通词单独触发危机等级。
+时间和方法相关规则必须尽量使用具有明确危险语义的短语。
 """
 
 from dataclasses import dataclass, field
@@ -14,7 +17,7 @@ from typing import List
 @dataclass
 class Rule:
     name: str
-    category: str  # direct_high_risk | medium_auxiliary | protective | false_positive_context
+    category: str
     severity: float
     patterns: List[str] = field(default_factory=list)
     description: str = ""
@@ -49,44 +52,43 @@ DIRECT_HIGH_RISK_RULES: List[Rule] = [
         category="direct_high_risk",
         severity=0.95,
         patterns=[
-            "准备了药", "准备好药", "买药", "吞药",
-            "安眠药", "吃药自杀", "过量服药",
-            "跳楼", "跳下去", "跳河", "跳海",
-            "烧炭", "上吊", "农药", "百草枯",
-            "割腕自杀", "刀", "绳子",
-            "吃药", "准备了",
+            "吃药自杀", "过量服药", "吞很多药",
+            "从楼上跳下去", "想跳楼", "准备跳楼",
+            "想跳河", "准备跳河", "想跳海", "准备跳海",
+            "烧炭自杀", "准备烧炭", "上吊自杀", "准备上吊",
+            "喝农药", "喝百草枯", "割腕自杀",
         ],
-        description="提到具体自杀方式或工具",
+        description="提到明确的自杀方式或工具用途",
     ),
     Rule(
         name="has_time",
         category="direct_high_risk",
         severity=0.90,
         patterns=[
-            "今晚就", "今天就", "现在就要", "马上要",
-            "等不了了", "等不及", "就今天", "今晚做",
-            "明天就", "天亮之前", "今晚",
+            "今晚就自杀", "今天就结束", "现在就去死",
+            "马上去死", "今晚结束自己", "明天就自杀",
+            "天亮之前结束", "今晚实施",
         ],
-        description="提到具体时间计划",
+        description="提到明确的实施时间",
     ),
     Rule(
         name="has_preparation",
         category="direct_high_risk",
         severity=0.92,
         patterns=[
-            "写遗书", "写了遗书", "遗书", "告别信",
-            "安排后事", "收拾东西准备", "已经决定了",
-            "决定了要", "下定决心",
+            "写遗书", "写了遗书", "告别信",
+            "安排后事", "准备好自杀", "已经准备自杀",
+            "把药都准备好了", "准备了自杀用的东西",
         ],
-        description="已进行准备行为",
+        description="已进行明确的危机准备行为",
     ),
     Rule(
         name="cannot_stay_safe",
         category="direct_high_risk",
         severity=0.88,
         patterns=[
-            "控制不住自己", "怕自己会", "不知道会做什么",
-            "无法保证安全", "保证不了", "可能会伤害",
+            "控制不住自己", "怕自己会伤害自己", "不知道会做什么",
+            "无法保证安全", "保证不了自己的安全", "可能会伤害自己",
             "不知道能控制多久",
         ],
         description="表示无法保证自身安全",
@@ -96,12 +98,12 @@ DIRECT_HIGH_RISK_RULES: List[Rule] = [
         category="direct_high_risk",
         severity=0.90,
         patterns=[
-            "想杀人", "同归于尽", "一起死", "报复",
-            "不放过他们", "带他们走",
+            "想杀人", "同归于尽", "带他们一起死", "想伤害别人",
         ],
-        description="有伤害他人的风险",
+        description="有明确伤害他人的风险",
     ),
 ]
+
 
 MEDIUM_AUXILIARY_RULES: List[Rule] = [
     Rule(
@@ -171,6 +173,7 @@ MEDIUM_AUXILIARY_RULES: List[Rule] = [
     ),
 ]
 
+
 PROTECTIVE_RULES: List[Rule] = [
     Rule(
         name="has_support",
@@ -216,7 +219,7 @@ PROTECTIVE_RULES: List[Rule] = [
     ),
 ]
 
-# 上下文误报标记（不作为独立信号，而是修饰其他信号）
+
 CONTEXT_MARKERS = {
     "negated_risk": {
         "label": "发现否定表达，可能不是真实风险",
@@ -236,8 +239,6 @@ CONTEXT_MARKERS = {
     },
 }
 
-# 所有产出信号的规则（direct + medium_auxiliary），合并为单一扫描列表
-ALL_SIGNAL_RULES: List[Rule] = DIRECT_HIGH_RISK_RULES + MEDIUM_AUXILIARY_RULES
 
-# 保护因素规则
+ALL_SIGNAL_RULES: List[Rule] = DIRECT_HIGH_RISK_RULES + MEDIUM_AUXILIARY_RULES
 ALL_PROTECTIVE_RULES: List[Rule] = PROTECTIVE_RULES
