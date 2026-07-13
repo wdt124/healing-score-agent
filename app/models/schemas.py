@@ -33,6 +33,10 @@ class ChatResponse(BaseModel):
     model_provider: str
     model_name: str
 
+    # 将原始模型分与平滑后的持续分显式区分，便于前端正确绘图和导出。
+    instant_score: Optional[float] = None
+    persistent_score: Optional[float] = None
+
     # 新增可选字段
     safety_mode: Optional[str] = None
     safety_actions: Optional[List[str]] = None
