@@ -35,7 +35,21 @@ def web_script():
     return FileResponse("app/web/app.js")
 
 
+@router.get("/ui/custom_tone.js")
+def web_custom_tone_script():
+    return FileResponse("app/web/custom_tone.js")
+
+
+@router.get("/ui/score_diagnostics_fix.js")
+def web_score_diagnostics_script():
+    return FileResponse("app/web/score_diagnostics_fix.js")
+
+
 @router.post("/ui/send")
-async def web_send(user_text: str = Form(default=""), session_id: str = Form(default=""), audio_file: UploadFile | None = File(default=None)):
+async def web_send(
+    user_text: str = Form(default=""),
+    session_id: str = Form(default=""),
+    audio_file: UploadFile | None = File(default=None),
+):
     result = run_pipeline(user_text, session_id=session_id or None)
     return result
