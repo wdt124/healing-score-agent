@@ -1,12 +1,12 @@
 """记忆服务
 
-memory_step — 管道第二步：EMA 分数平滑 + 对话历史持久化。
+memory_step — 管道第二步：分数平滑 + 对话历史持久化。
 """
 
 import json
 import os
 import time
-from typing import Dict, List
+from typing import Dict, List, Any
 from langchain_core.runnables import RunnableLambda
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 from app.memory.score_smoother import ScoreSmoother
@@ -86,12 +86,11 @@ class ConversationMemory:
         self._save_to_file()
 
     def get_history_text(self, session_id: str, max_turns: int = 10) -> str:
-        """将历史对话格式化为文本，注入 LLM 输入
+        """将历史对话格式化为文本，注入 LLM 输入。
 
         Args:
             session_id: 会话 ID
-            max_turns: 最多保留最近 N 轮对话（每轮 = 用户 + 助手），
-                      避免超出 LLM 上下文窗口。
+            max_turns: 最多保留最近 N 轮对话（每轮 = 用户 + 助手）。
         """
         self._touch(session_id)
         messages = self._store.get(session_id, [])
@@ -118,14 +117,23 @@ class ConversationMemory:
 
 
 _conversation_memory = ConversationMemory()
-_score_smoother = ScoreSmoother(alpha=0.85, beta=0.15)
+_score_smoother = ScoreSmoother(alpha=0.85, beta=0.15, warmup_turns=3)
 
 
-memory_step = RunnableLambda(lambda inputs: {
-    **inputs,
-    "instant_score": inputs["score_result"]["predicted_sds_score"],
-    "persistent_score": _score_smoother.update(
+def memory_step_fn(inputs: Dict[str, Any]) -> Dict[str, Any]:
+    """只更新一次平滑器，并同时保留瞬时分和规则修正前的平滑分。"""
+    instant_score = float(inputs["score_result"]["predicted_sds_score"])
+    smoothed_score = _score_smoother.update(
         inputs.get("session_id", "default"),
-        inputs["score_result"]["predicted_sds_score"],
-    ),
-})
+        instant_score,
+    )
+    return {
+        **inputs,
+        "instant_score": instant_score,
+        "smoothed_score": smoothed_score,
+        # 风险评估步骤仍读取 persistent_score，并可能在规则命中后覆盖它。
+        "persistent_score": smoothed_score,
+    }
+
+
+memory_step = RunnableLambda(memory_step_fn)
