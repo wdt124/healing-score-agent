@@ -83,7 +83,7 @@ def run_pipeline(
 
     instant_score = float(result.get("instant_score") or score_res.get("predicted_sds_score", 0))
     smoothed_score = float(result.get("smoothed_score") or instant_score)
-    persistent_score = float(result.get("persistent_score") or smoothed_score)
+    risk_adjusted_score = float(result.get("persistent_score") or smoothed_score)
     risk_signals_brief: List[RiskSignalBrief] = []
     if assessment is not None:
         for s in assessment.signals:
@@ -93,12 +93,14 @@ def run_pipeline(
     return {
         "reply": result["reply"],
         "risk_level": result["risk_level"],
-        # 保留 score 字段兼容旧前端；其含义是规则修正后用于风险评估的分数。
-        "score": persistent_score,
+        # score 保持兼容：仍表示规则修正后用于风险评估的分数。
+        "score": risk_adjusted_score,
         "instant_score": instant_score,
         "smoothed_score": smoothed_score,
-        "persistent_score": persistent_score,
-        "evidence": _build_api_evidence_summary(persistent_score, assessment),
+        # persistent_score 对外统一表示规则修正前的持续趋势分。
+        "persistent_score": smoothed_score,
+        "risk_adjusted_score": risk_adjusted_score,
+        "evidence": _build_api_evidence_summary(risk_adjusted_score, assessment),
         "model_provider": settings.llm_provider,
         "model_name": settings.llm_model,
         "safety_mode": safety.mode if safety else None,
