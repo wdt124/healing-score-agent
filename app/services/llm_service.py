@@ -46,22 +46,21 @@ def _call_llm(prompt: str, system: str = "") -> str:
 
 
 def _build_llm_diagnostic_context(details: dict) -> list[str]:
-    """构建注入 LLM System Prompt 的诊断上下文（含详细特征分数）。
-
-    注意：这是面向 LLM 的内部诊断信息，不是 API 响应的低敏 evidence。
-    API 响应的低敏 evidence 由 pipeline_service._build_api_evidence_summary 生成。
-    """
+    """构建注入 LLM System Prompt 的内部诊断上下文。"""
     context: list[str] = []
     text_features = details.get("text_features_extracted", {})
     if text_features:
         feature_labels = {
             "anhedonia": "快感缺失", "depressed": "情绪低落", "sleep": "睡眠问题",
             "fatigue": "疲劳", "appetite": "食欲变化", "guilt": "内疚感",
-            "concentrate": "注意力困难", "movement": "运动迟缓"
+            "concentrate": "注意力困难", "movement": "运动迟缓",
         }
-        for k in ["anhedonia", "depressed", "sleep", "fatigue", "appetite", "guilt", "concentrate", "movement"]:
-            v = text_features.get(k, 0)
-            context.append(f"{feature_labels.get(k, k)}: {v}/3分")
+        for key in [
+            "anhedonia", "depressed", "sleep", "fatigue",
+            "appetite", "guilt", "concentrate", "movement",
+        ]:
+            value = text_features.get(key, 0)
+            context.append(f"{feature_labels.get(key, key)}: {value}/3分")
 
     audio_summary = details.get("audio_features_summary")
     if isinstance(audio_summary, dict):
@@ -91,16 +90,15 @@ def generate_supportive_reply(
     if persona_instruction:
         extra_instruction += "\n\n[Agent 初始化设定]\n" + persona_instruction
 
-    # 将 forbid/require 注入 extra_instruction
     if safety_decision.forbidden_actions:
         extra_instruction += " 禁止行为: " + "; ".join(safety_decision.forbidden_actions) + "。"
     if safety_decision.required_actions:
         extra_instruction += " 必须行为: " + "; ".join(safety_decision.required_actions) + "。"
 
-    refs = safety_decision.reference_modules
-
     kb = _get_kb()
-    prompt_knowledge = kb.generate_prompt(include_refs=refs)
+    prompt_knowledge = kb.generate_prompt(
+        include_refs=safety_decision.reference_modules,
+    )
 
     if conversation_history:
         prompt = f"{conversation_history}\n\n[当前用户消息]\n{user_text}"
@@ -121,14 +119,21 @@ def generate_supportive_reply(
 def _reply_with_memory(inputs: dict) -> dict:
     session_id = inputs.get("session_id", "default")
     history = _conversation_memory.get_history_text(session_id)
-    llm_diagnostic_context = _build_llm_diagnostic_context(inputs["score_result"]["details"])
+    llm_diagnostic_context = _build_llm_diagnostic_context(
+        inputs["score_result"]["details"],
+    )
 
     safety_decision = inputs.get("safety_decision")
     risk_assessment = inputs.get("risk_assessment")
-    persona_instruction, safe_profile, profile_warnings = build_persona_instruction(inputs.get("agent_profile"))
+    persona_instruction, safe_profile, profile_warnings = build_persona_instruction(
+        inputs.get("agent_profile"),
+    )
+
+    # reply_user_text 可以包含引用；user_text 只包含当前输入，供评分和风险扫描使用。
+    reply_user_text = inputs.get("reply_user_text") or inputs["user_text"]
 
     reply = generate_supportive_reply(
-        user_text=inputs["user_text"],
+        user_text=reply_user_text,
         risk_level=inputs["risk_level"],
         persistent_score=float(inputs["persistent_score"]),
         llm_diagnostic_context=llm_diagnostic_context,
@@ -137,12 +142,15 @@ def _reply_with_memory(inputs: dict) -> dict:
         persona_instruction=persona_instruction,
     )
 
-    _conversation_memory.add_turn(session_id, inputs["user_text"], reply)
+    _conversation_memory.add_turn(session_id, reply_user_text, reply)
 
     return {
         "reply": reply,
         "score_result": inputs["score_result"],
+        "instant_score": inputs.get("instant_score"),
+        "smoothed_score": inputs.get("smoothed_score"),
         "persistent_score": inputs["persistent_score"],
+        "risk_adjusted_score": inputs.get("risk_adjusted_score"),
         "risk_level": inputs["risk_level"],
         "risk_assessment": risk_assessment,
         "safety_decision": safety_decision,
