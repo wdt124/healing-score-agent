@@ -33,10 +33,11 @@ class ChatResponse(BaseModel):
     model_provider: str
     model_name: str
 
-    # 显式区分三种分数：原始模型分、规则修正前平滑分、规则修正后风险评估分。
+    # 显式区分三种分数：原始模型分、持续趋势分、规则修正后风险评估分。
     instant_score: Optional[float] = None
     smoothed_score: Optional[float] = None
     persistent_score: Optional[float] = None
+    risk_adjusted_score: Optional[float] = None
 
     # 新增可选字段
     safety_mode: Optional[str] = None
