@@ -33,8 +33,9 @@ class ChatResponse(BaseModel):
     model_provider: str
     model_name: str
 
-    # 将原始模型分与平滑后的持续分显式区分，便于前端正确绘图和导出。
+    # 显式区分三种分数：原始模型分、规则修正前平滑分、规则修正后风险评估分。
     instant_score: Optional[float] = None
+    smoothed_score: Optional[float] = None
     persistent_score: Optional[float] = None
 
     # 新增可选字段
