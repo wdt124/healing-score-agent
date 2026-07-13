@@ -13,12 +13,27 @@ let micStream = null;
 let pendingProfile = null;
 let profileSetupDone = Boolean(activeId);
 let quoteDraft = null;
+let selectionQuoteCandidate = null;
 
 const fileInput = document.createElement("input");
 fileInput.type = "file";
 fileInput.accept = "audio/*";
 fileInput.style.display = "none";
 document.body.appendChild(fileInput);
+
+const selectionQuoteBtn = document.createElement("button");
+selectionQuoteBtn.type = "button";
+selectionQuoteBtn.className = "selection-quote-btn hidden";
+selectionQuoteBtn.textContent = "引用选中内容";
+selectionQuoteBtn.onmousedown = (event) => event.preventDefault();
+selectionQuoteBtn.onclick = () => {
+  if (selectionQuoteCandidate) {
+    setQuoteDraft(selectionQuoteCandidate.role, selectionQuoteCandidate.text);
+  }
+  window.getSelection?.()?.removeAllRanges();
+  hideSelectionQuoteButton();
+};
+document.body.appendChild(selectionQuoteBtn);
 
 function save() {
   localStorage.setItem(KEY, JSON.stringify(sessions));
@@ -96,6 +111,7 @@ function skipProfileSetup() {
 }
 
 function render() {
+  hideSelectionQuoteButton();
   renderList();
   renderHeader();
   renderMessages();
@@ -151,19 +167,52 @@ function clipText(text, max = 280) {
   return clean.length > max ? clean.slice(0, max) + "..." : clean;
 }
 
-function getSelectedTextInside(node) {
+function hideSelectionQuoteButton() {
+  selectionQuoteCandidate = null;
+  selectionQuoteBtn.classList.add("hidden");
+}
+
+function captureSelectedQuote(messageNode, role) {
   const selection = window.getSelection?.();
-  if (!selection || selection.isCollapsed) return "";
-  const text = selection.toString().trim();
-  if (!text) return "";
+  if (!selection || selection.isCollapsed || !selection.rangeCount) {
+    hideSelectionQuoteButton();
+    return;
+  }
+
+  const range = selection.getRangeAt(0);
   const anchor = selection.anchorNode;
   const focus = selection.focusNode;
-  if ((anchor && node.contains(anchor)) || (focus && node.contains(focus))) return clipText(text, 500);
-  return "";
+  if (!anchor || !focus || !messageNode.contains(anchor) || !messageNode.contains(focus)) {
+    hideSelectionQuoteButton();
+    return;
+  }
+
+  const text = clipText(selection.toString(), 1000);
+  if (!text) {
+    hideSelectionQuoteButton();
+    return;
+  }
+
+  const rect = range.getBoundingClientRect();
+  if (!rect || (!rect.width && !rect.height)) {
+    hideSelectionQuoteButton();
+    return;
+  }
+
+  selectionQuoteCandidate = { role, text };
+  const buttonWidth = 116;
+  const left = Math.min(
+    window.innerWidth - buttonWidth - 8,
+    Math.max(8, rect.left + rect.width / 2 - buttonWidth / 2),
+  );
+  const top = Math.max(8, rect.top - 38);
+  selectionQuoteBtn.style.left = `${left}px`;
+  selectionQuoteBtn.style.top = `${top}px`;
+  selectionQuoteBtn.classList.remove("hidden");
 }
 
 function setQuoteDraft(role, text) {
-  const clean = clipText(text, 500);
+  const clean = clipText(text, 1000);
   if (!clean) return;
   quoteDraft = { role, text: clean, time: new Date().toISOString() };
   renderQuoteDraft();
@@ -191,6 +240,7 @@ function renderMessages() {
     box.innerHTML = '<div class="empty-state"><div class="empty-icon">💬</div><h3>开始一次新的对话</h3><p>可以先完成 Agent 初始化设定，也可以跳过后直接开始。</p></div>';
     return;
   }
+
   s.messages.forEach((m, index) => {
     const div = document.createElement("div");
     div.className = "message " + m.role;
@@ -198,7 +248,7 @@ function renderMessages() {
 
     if (m.quote) {
       const quote = document.createElement("div");
-      quote.className = "quoted-block";
+      quote.className = "quoted-block selectable-field";
       const qr = document.createElement("div");
       qr.className = "quoted-role";
       qr.textContent = "引用 " + roleLabel(m.quote.role);
@@ -206,12 +256,16 @@ function renderMessages() {
       qt.textContent = m.quote.text;
       quote.appendChild(qr);
       quote.appendChild(qt);
+      quote.onmouseup = () => setTimeout(() => captureSelectedQuote(div, m.role), 0);
+      quote.ontouchend = () => setTimeout(() => captureSelectedQuote(div, m.role), 60);
       div.appendChild(quote);
     }
 
     const body = document.createElement("div");
-    body.className = "message-body";
+    body.className = "message-body selectable-field";
     body.textContent = m.text;
+    body.onmouseup = () => setTimeout(() => captureSelectedQuote(div, m.role), 0);
+    body.ontouchend = () => setTimeout(() => captureSelectedQuote(div, m.role), 60);
     div.appendChild(body);
 
     if (m.meta) {
@@ -225,19 +279,19 @@ function renderMessages() {
       const quoteBtn = document.createElement("button");
       quoteBtn.className = "quote-btn";
       quoteBtn.type = "button";
-      quoteBtn.textContent = "引用";
-      quoteBtn.title = "引用整条消息；先选中文本再点则只引用选中文本";
+      quoteBtn.textContent = "引用整条";
+      quoteBtn.title = "引用整条消息；要引用具体句子，请直接拖选文字";
       quoteBtn.onclick = (event) => {
         event.stopPropagation();
-        const selected = getSelectedTextInside(div);
-        setQuoteDraft(m.role, selected || m.text);
+        setQuoteDraft(m.role, m.text);
       };
       div.appendChild(quoteBtn);
-      div.ondblclick = () => setQuoteDraft(m.role, m.text);
     }
 
     box.appendChild(div);
   });
+
+  box.onscroll = hideSelectionQuoteButton;
   box.scrollTop = box.scrollHeight;
 }
 
@@ -313,20 +367,24 @@ function buildTrace(data, audioPath, profile) {
     input: audioPath ? "文本 + 语音" : "文本",
     profile: describeProfile(profile),
     profileSafety: "人设设定仅影响称呼、语气和陪伴风格；不能覆盖心理支持安全策略。",
-    scoring: audioPath ? "scoring_step：V2 多模态评分（文本语义 + 音频特征）" : "scoring_step：V1 文本评分",
-    memory: "memory_step：会话历史 + EMA 平滑",
-    risk: "risk_assessment_step：规则信号 + 趋势信号 + 综合等级",
+    scoring: audioPath ? "scoring_step：V2 多模态瞬时评分（文本语义 + 音频特征）" : "scoring_step：V1 文本瞬时评分",
+    memory: "memory_step：前 3 轮累计均值预热，之后使用 EMA 平滑",
+    risk: "risk_assessment_step：规则信号 + 趋势信号 + 持续分综合评级",
     safety: `safety_policy_step：${data.safety_mode || "默认安全策略"}`,
     reply: "reply_step：带安全约束和人设偏好的 LLM 回复",
-    note: "展示的是可观测执行链路，不展示模型私有推理。",
+    note: "风险等级不是评分阈值的简单映射；直接危险信号可以覆盖分数。",
   };
 }
 
 function addMetric(session, data, audioPath) {
   if (!session.metrics) session.metrics = [];
+  const instantScore = Number(data.instant_score ?? data.score ?? 0);
+  const persistentScore = Number(data.persistent_score ?? data.score ?? instantScore);
   const metric = {
     t: new Date().toLocaleTimeString(),
-    score: Number(data.score || 0),
+    score: persistentScore,
+    instantScore,
+    persistentScore,
     riskLevel: data.risk_level || "unknown",
     riskValue: riskToValue(data.risk_level),
     safetyMode: data.safety_mode || "-",
@@ -340,6 +398,14 @@ function addMetric(session, data, audioPath) {
   save();
 }
 
+function metricInstant(metric) {
+  return Number(metric?.instantScore ?? metric?.score ?? 0);
+}
+
+function metricPersistent(metric) {
+  return Number(metric?.persistentScore ?? metric?.score ?? metricInstant(metric));
+}
+
 function renderDevCurrent(session) {
   const box = $("devCurrent");
   if (!box) return;
@@ -348,13 +414,19 @@ function renderDevCurrent(session) {
     box.textContent = "暂无请求";
     return;
   }
-  const score = Number.isFinite(metric.score) ? metric.score.toFixed(1) : "-";
+  const instant = Number.isFinite(metricInstant(metric)) ? metricInstant(metric).toFixed(1) : "-";
+  const persistent = Number.isFinite(metricPersistent(metric)) ? metricPersistent(metric).toFixed(1) : "-";
   box.innerHTML = `
-    <div class="metric-grid">
+    <div class="metric-grid three">
       <div class="metric-card">
-        <div class="metric-label">本轮评分</div>
-        <div class="metric-value">${score}</div>
-        <div class="metric-sub">score / persistent_score</div>
+        <div class="metric-label">本轮模型评分</div>
+        <div class="metric-value">${instant}</div>
+        <div class="metric-sub">instant score</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">持续趋势评分</div>
+        <div class="metric-value">${persistent}</div>
+        <div class="metric-sub">warm-up + EMA</div>
       </div>
       <div class="metric-card">
         <div class="metric-label">风险等级</div>
@@ -362,6 +434,7 @@ function renderDevCurrent(session) {
         <div class="metric-sub">mode: ${metric.safetyMode || "-"}</div>
       </div>
     </div>
+    <div class="metric-sub metric-note">风险等级还会综合直接危险信号和趋势，因此不一定与数值评分一一对应。</div>
     <div class="metric-sub" style="margin-top:8px;">${metric.provider || "-"} / ${metric.model || "-"} / ${metric.audio ? "文本+语音" : "文本"} / ${metric.t}</div>
   `;
 }
@@ -382,49 +455,161 @@ function renderDevPanel() {
   } else {
     trace.innerHTML = Object.entries(s.lastTrace).map(([k, v]) => `<div class="trace-row"><div class="trace-key">${k}</div><div class="trace-value">${v}</div></div>`).join("");
   }
-  drawChart("scoreCanvas", s?.metrics || [], "score");
-  drawChart("riskCanvas", s?.metrics || [], "riskValue");
+  drawScoreChart("scoreCanvas", s?.metrics || []);
+  drawRiskChart("riskCanvas", s?.metrics || []);
 }
 
-function drawChart(canvasId, points, key) {
+function drawEmptyChart(ctx, w, h) {
+  ctx.fillStyle = "#7b7167";
+  ctx.font = "13px sans-serif";
+  ctx.fillText("暂无数据", 20, Math.round(h / 2));
+}
+
+function chartPointX(index, count, left, right, width) {
+  if (count <= 1) return left;
+  return left + index * ((width - left - right) / (count - 1));
+}
+
+function drawSeries(ctx, values, mapper, xMapper, dashed = false) {
+  if (!values.length) return;
+  ctx.setLineDash(dashed ? [5, 4] : []);
+  ctx.beginPath();
+  values.forEach((value, index) => {
+    const x = xMapper(index);
+    const y = mapper(value);
+    if (index === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+  ctx.setLineDash([]);
+  values.forEach((value, index) => {
+    const x = xMapper(index);
+    const y = mapper(value);
+    ctx.beginPath();
+    ctx.arc(x, y, 2.8, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
+function drawScoreChart(canvasId, points) {
   const canvas = $(canvasId);
   if (!canvas) return;
   const ctx = canvas.getContext("2d");
   const w = canvas.width;
   const h = canvas.height;
+  const left = 36;
+  const right = 10;
+  const top = 25;
+  const bottom = 20;
   ctx.clearRect(0, 0, w, h);
   ctx.fillStyle = "#fffaf7";
   ctx.fillRect(0, 0, w, h);
-  ctx.strokeStyle = "#eadfd2";
-  ctx.lineWidth = 1;
-  for (let i = 1; i <= 4; i++) {
-    const y = (h / 5) * i;
-    ctx.beginPath(); ctx.moveTo(10, y); ctx.lineTo(w - 10, y); ctx.stroke();
-  }
+
   if (!points.length) {
-    ctx.fillStyle = "#7b7167";
-    ctx.font = "13px sans-serif";
-    ctx.fillText("暂无数据", 20, 80);
+    drawEmptyChart(ctx, w, h);
     return;
   }
-  const values = points.map((p) => Number(p[key] || 0));
-  const max = key === "riskValue" ? 4 : Math.max(30, ...values);
-  const min = 0;
-  const xStep = points.length > 1 ? (w - 40) / (points.length - 1) : 0;
+
+  const instant = points.map(metricInstant);
+  const persistent = points.map(metricPersistent);
+  const all = [...instant, ...persistent].filter(Number.isFinite);
+  let min = Math.max(0, Math.floor((Math.min(...all) - 5) / 10) * 10);
+  let max = Math.min(100, Math.ceil((Math.max(...all) + 5) / 10) * 10);
+  if (max - min < 20) {
+    min = Math.max(0, min - 10);
+    max = Math.min(100, max + 10);
+  }
+  if (max <= min) max = min + 20;
+
+  const yFor = (value) => h - bottom - ((value - min) / (max - min)) * (h - top - bottom);
+  const xFor = (index) => chartPointX(index, points.length, left, right, w);
+
+  ctx.strokeStyle = "#eadfd2";
+  ctx.fillStyle = "#7b7167";
+  ctx.font = "11px sans-serif";
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const value = min + (max - min) * (i / 4);
+    const y = yFor(value);
+    ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(w - right, y); ctx.stroke();
+    ctx.fillText(value.toFixed(0), 4, y + 4);
+  }
+
   ctx.strokeStyle = "#8c5f3f";
+  ctx.fillStyle = "#8c5f3f";
+  ctx.lineWidth = 2;
+  drawSeries(ctx, instant, yFor, xFor, false);
+
+  ctx.strokeStyle = "#8a7f74";
+  ctx.fillStyle = "#8a7f74";
+  ctx.lineWidth = 2;
+  drawSeries(ctx, persistent, yFor, xFor, true);
+
+  ctx.fillStyle = "#8c5f3f";
+  ctx.fillRect(left, 7, 13, 2);
+  ctx.fillStyle = "#5f554d";
+  ctx.fillText("本轮模型评分", left + 18, 11);
+  ctx.strokeStyle = "#8a7f74";
+  ctx.setLineDash([5, 4]);
+  ctx.beginPath(); ctx.moveTo(left + 112, 8); ctx.lineTo(left + 125, 8); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = "#5f554d";
+  ctx.fillText("持续趋势", left + 130, 11);
+}
+
+function drawRiskChart(canvasId, points) {
+  const canvas = $(canvasId);
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  const w = canvas.width;
+  const h = canvas.height;
+  const left = 58;
+  const right = 10;
+  const top = 12;
+  const bottom = 18;
+  const labels = ["normal", "low", "medium", "high", "critical"];
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = "#fffaf7";
+  ctx.fillRect(0, 0, w, h);
+
+  if (!points.length) {
+    drawEmptyChart(ctx, w, h);
+    return;
+  }
+
+  const values = points.map((point) => Number(point.riskValue ?? riskToValue(point.riskLevel)));
+  const yFor = (value) => h - bottom - (value / 4) * (h - top - bottom);
+  const xFor = (index) => chartPointX(index, points.length, left, right, w);
+
+  ctx.strokeStyle = "#eadfd2";
+  ctx.fillStyle = "#7b7167";
+  ctx.font = "10px sans-serif";
+  ctx.lineWidth = 1;
+  labels.forEach((label, value) => {
+    const y = yFor(value);
+    ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(w - right, y); ctx.stroke();
+    ctx.fillText(label, 4, y + 3);
+  });
+
+  ctx.strokeStyle = "#8c5f3f";
+  ctx.fillStyle = "#8c5f3f";
   ctx.lineWidth = 2;
   ctx.beginPath();
-  values.forEach((v, i) => {
-    const x = 20 + i * xStep;
-    const y = h - 20 - ((v - min) / (max - min || 1)) * (h - 40);
-    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  values.forEach((value, index) => {
+    const x = xFor(index);
+    const y = yFor(value);
+    if (index === 0) {
+      ctx.moveTo(x, y);
+    } else {
+      const previousY = yFor(values[index - 1]);
+      ctx.lineTo(x, previousY);
+      ctx.lineTo(x, y);
+    }
   });
   ctx.stroke();
-  ctx.fillStyle = "#8c5f3f";
-  values.forEach((v, i) => {
-    const x = 20 + i * xStep;
-    const y = h - 20 - ((v - min) / (max - min || 1)) * (h - 40);
-    ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill();
+  values.forEach((value, index) => {
+    ctx.beginPath();
+    ctx.arc(xFor(index), yFor(value), 3, 0, Math.PI * 2);
+    ctx.fill();
   });
 }
 
@@ -459,7 +644,7 @@ function buildExportRows(session) {
       user_text: messageTextForExport(userMsg),
       user_audio: userMsg.audioPath || userMsg.audioName || "",
       risk_level: metric.riskLevel || "",
-      model_score: Number.isFinite(Number(metric.score)) ? String(Number(metric.score)) : "",
+      model_score: Number.isFinite(metricInstant(metric)) ? String(metricInstant(metric)) : "",
       agent_reply: agentMsg?.text || "",
     });
   }
@@ -717,6 +902,11 @@ $("textInput").addEventListener("keydown", (event) => {
     sendMessage();
   }
 });
+
+document.addEventListener("mousedown", (event) => {
+  if (event.target !== selectionQuoteBtn) hideSelectionQuoteButton();
+});
+window.addEventListener("resize", hideSelectionQuoteButton);
 
 render();
 if (!current()) setTimeout(showProfileModal, 150);
