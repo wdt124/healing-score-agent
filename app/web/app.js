@@ -135,6 +135,8 @@ function renderHeader() {
   $("chatTitle").textContent = s ? s.title : "新建对话";
   $("chatSubtitle").textContent = s ? "session_id: " + s.session_id : "输入第一句话后会自动生成会话标题和 session_id";
   $("deleteSessionBtn").disabled = !s;
+  if ($("exportTxtBtn")) $("exportTxtBtn").disabled = !s;
+  if ($("exportCsvBtn")) $("exportCsvBtn").disabled = !s;
 }
 
 function roleLabel(role) {
@@ -268,8 +270,8 @@ function renderAudio() {
   $("audioMeta").textContent = `${audioName || "audio"}，${Math.round(audioBlob.size / 1024)} KB`;
 }
 
-function addMessage(session, role, text, meta = "", quote = null) {
-  session.messages.push({ role, text, meta, quote, time: new Date().toISOString() });
+function addMessage(session, role, text, meta = "", quote = null, extra = {}) {
+  session.messages.push({ role, text, meta, quote, time: new Date().toISOString(), ...extra });
   save();
   render();
 }
@@ -433,6 +435,109 @@ function buildOutboundText(text, quote) {
   return `${quoted}\n\n[用户当前输入]\n${reply}`;
 }
 
+function messageTextForExport(message) {
+  if (!message) return "";
+  if (!message.quote) return message.text || "";
+  return `[引用${roleLabel(message.quote.role)}]\n${message.quote.text}\n\n[用户当前输入]\n${message.text || ""}`;
+}
+
+function buildExportRows(session) {
+  if (!session) return [];
+  const rows = [];
+  const messages = session.messages || [];
+  let metricIndex = 0;
+
+  for (let i = 0; i < messages.length; i++) {
+    const userMsg = messages[i];
+    if (userMsg.role !== "user") continue;
+
+    const agentMsg = messages.slice(i + 1).find((m) => m.role === "agent");
+    const metric = (session.metrics || [])[metricIndex] || {};
+    metricIndex += 1;
+
+    rows.push({
+      user_text: messageTextForExport(userMsg),
+      user_audio: userMsg.audioPath || userMsg.audioName || "",
+      risk_level: metric.riskLevel || "",
+      model_score: Number.isFinite(Number(metric.score)) ? String(Number(metric.score)) : "",
+      agent_reply: agentMsg?.text || "",
+    });
+  }
+  return rows;
+}
+
+function safeFileName(value) {
+  return String(value || "chat")
+    .trim()
+    .replace(/[\\/:*?"<>|]+/g, "_")
+    .replace(/\s+/g, "_")
+    .slice(0, 60) || "chat";
+}
+
+function downloadTextFile(filename, text, mimeType) {
+  const blob = new Blob([text], { type: `${mimeType};charset=utf-8` });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function csvEscape(value) {
+  const text = String(value ?? "");
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function exportCurrentChat(format) {
+  const session = current();
+  if (!session) {
+    alert("当前没有可导出的对话。");
+    return;
+  }
+  const rows = buildExportRows(session);
+  if (!rows.length) {
+    alert("当前对话还没有完整轮次可导出。");
+    return;
+  }
+
+  const stamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, "-");
+  const base = `${safeFileName(session.title)}_${session.session_id}_${stamp}`;
+  const headers = ["用户输入文本", "用户输入语音", "风险等级预测", "模型评分", "agent回复文本"];
+
+  if (format === "csv") {
+    const lines = [headers.map(csvEscape).join(",")];
+    rows.forEach((row) => {
+      lines.push([
+        row.user_text,
+        row.user_audio,
+        row.risk_level,
+        row.model_score,
+        row.agent_reply,
+      ].map(csvEscape).join(","));
+    });
+    downloadTextFile(`${base}.csv`, "\ufeff" + lines.join("\r\n"), "text/csv");
+    return;
+  }
+
+  const blocks = [];
+  blocks.push(`会话标题：${session.title}`);
+  blocks.push(`session_id：${session.session_id}`);
+  blocks.push(`导出时间：${new Date().toLocaleString()}`);
+  blocks.push("字段：用户输入文本 / 用户输入语音 / 风险等级预测 / 模型评分 / agent回复文本");
+  rows.forEach((row, index) => {
+    blocks.push(`\n===== 第 ${index + 1} 轮 =====`);
+    blocks.push(`用户输入文本：\n${row.user_text || ""}`);
+    blocks.push(`用户输入语音：${row.user_audio || ""}`);
+    blocks.push(`风险等级预测：${row.risk_level || ""}`);
+    blocks.push(`模型评分：${row.model_score || ""}`);
+    blocks.push(`agent回复文本：\n${row.agent_reply || ""}`);
+  });
+  downloadTextFile(`${base}.txt`, blocks.join("\n"), "text/plain");
+}
+
 async function sendMessage() {
   const input = $("textInput");
   const text = input.value.trim();
@@ -450,8 +555,12 @@ async function sendMessage() {
   try {
     const quoteToSend = quoteDraft ? { ...quoteDraft } : null;
     const session = await ensureSession(text || "语音对话");
+    const selectedAudioName = audioName || "";
     const audioPath = await uploadAudio(session.session_id);
-    addMessage(session, "user", text || "[语音输入]", audioPath ? "已附带语音" : "", quoteToSend);
+    addMessage(session, "user", text || "[语音输入]", audioPath ? "已附带语音" : "", quoteToSend, {
+      audioPath: audioPath || "",
+      audioName: audioPath ? selectedAudioName : "",
+    });
     showTyping();
 
     input.value = "";
@@ -597,6 +706,9 @@ $("clearQuoteBtn").onclick = () => {
   quoteDraft = null;
   renderQuoteDraft();
 };
+
+if ($("exportTxtBtn")) $("exportTxtBtn").onclick = () => exportCurrentChat("txt");
+if ($("exportCsvBtn")) $("exportCsvBtn").onclick = () => exportCurrentChat("csv");
 
 $("sendBtn").onclick = sendMessage;
 $("textInput").addEventListener("keydown", (event) => {
